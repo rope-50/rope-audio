@@ -1,7 +1,5 @@
 #include "rope/AudioEngine.hpp"
 
-#include "RtAudio.h"
-
 #include <array>
 #include <atomic>
 #include <cstdio>
@@ -12,11 +10,10 @@
 namespace rope {
 namespace {
 
-constexpr std::size_t kMaxVoices           = 64;   ///< polyphony limit
-constexpr std::size_t kCommandQueueCap     = 256;  ///< pending control->audio commands
-constexpr unsigned int kDefaultSampleRate  = 48000;
-constexpr unsigned int kDefaultBufferFrames = 512;
-constexpr unsigned int kOutputChannels     = 2;    ///< stereo output
+constexpr std::size_t kMaxVoices            = 64;   ///< polyphony limit
+constexpr std::size_t kCommandQueueCap      = 256;  ///< pending control->audio commands
+constexpr unsigned int kDefaultSampleRate   = 48000;
+constexpr unsigned int kDefaultOutChannels  = 2;    ///< requested stereo output
 
 // --- Control -> audio thread messages --------------------------------------
 enum class CommandType { Play, Stop, StopAll };
@@ -74,13 +71,13 @@ struct Voice {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Implementation (pimpl) — keeps RtAudio.h and the mixer out of the public API.
+// Implementation (pimpl) — keeps the backend and the mixer out of the public API.
 // ---------------------------------------------------------------------------
 struct AudioEngine::Impl {
-    RtAudio      dac;
-    bool         running     = false;
-    unsigned int sampleRate  = kDefaultSampleRate;
-    unsigned int channels    = kOutputChannels;
+    std::unique_ptr<AudioBackend> backend;
+    bool         running    = false;
+    unsigned int sampleRate = kDefaultSampleRate;
+    unsigned int channels   = kDefaultOutChannels;
 
     // Sound bank — control thread only. unique_ptr gives stable addresses so the
     // audio thread can hold raw pointers into it safely.
@@ -127,13 +124,14 @@ struct AudioEngine::Impl {
     }
 
     void mix(float* out, unsigned int nFrames) {
-        std::memset(out, 0, sizeof(float) * nFrames * channels);
+        const unsigned int outCh = channels;
+        std::memset(out, 0, sizeof(float) * nFrames * outCh);
 
         for (Voice& v : voices) {
             if (!v.active || v.buffer == nullptr) continue;
 
-            const AudioBuffer& buf     = *v.buffer;
-            const std::size_t  frames  = buf.frameCount();
+            const AudioBuffer&  buf    = *v.buffer;
+            const std::size_t   frames = buf.frameCount();
             const std::uint32_t srcCh  = buf.channels;
 
             for (unsigned int f = 0; f < nFrames; ++f) {
@@ -142,11 +140,17 @@ struct AudioEngine::Impl {
                     else        { v.active = false; break; }
                 }
                 const float* src = &buf.samples[v.position * srcCh];
-                // Mono -> duplicate to both ears; stereo (or more) -> take L/R.
+                // Mono source -> both ears; stereo+ -> first two channels.
                 const float l = src[0];
                 const float r = (srcCh == 1) ? src[0] : src[1];
-                out[f * channels + 0] += l * v.gain;
-                out[f * channels + 1] += r * v.gain;
+
+                if (outCh == 1) {
+                    out[f] += 0.5f * (l + r) * v.gain;       // downmix to mono
+                } else {
+                    out[f * outCh + 0] += l * v.gain;
+                    out[f * outCh + 1] += r * v.gain;
+                    // Output channels beyond stereo are left silent for now.
+                }
                 ++v.position;
             }
         }
@@ -155,13 +159,11 @@ struct AudioEngine::Impl {
         // transparent.
     }
 
-    static int audioCallback(void* outputBuffer, void* /*inputBuffer*/,
-                             unsigned int nFrames, double /*streamTime*/,
-                             RtAudioStreamStatus /*status*/, void* userData) {
-        auto* self = static_cast<Impl*>(userData);
+    // RenderCallback invoked by whichever backend is active, on its RT thread.
+    static void render(float* out, unsigned int frames, void* user) {
+        auto* self = static_cast<Impl*>(user);
         self->drainCommands();
-        self->mix(static_cast<float*>(outputBuffer), nFrames);
-        return 0;
+        self->mix(out, frames);
     }
 };
 
@@ -172,52 +174,41 @@ AudioEngine::AudioEngine() : impl_(std::make_unique<Impl>()) {}
 
 AudioEngine::~AudioEngine() { stop(); }
 
-bool AudioEngine::start(unsigned int sampleRate, unsigned int bufferFrames) {
+bool AudioEngine::start(unsigned int sampleRate, unsigned int bufferFrames,
+                        BackendType backendType) {
     if (impl_->running) return true;
 
-    if (impl_->dac.getDeviceCount() < 1) {
-        std::fprintf(stderr, "[rope] no audio output devices found\n");
+    impl_->backend = createAudioBackend(backendType);
+    if (!impl_->backend) {
+        std::fprintf(stderr, "[rope] requested audio backend is not available\n");
         return false;
     }
 
-    RtAudio::StreamParameters params;
-    params.deviceId     = impl_->dac.getDefaultOutputDevice();
-    params.nChannels    = impl_->channels;
-    params.firstChannel = 0;
+    AudioStreamConfig config;
+    config.sampleRate   = sampleRate ? sampleRate : kDefaultSampleRate;
+    config.bufferFrames = bufferFrames;
+    config.channels     = impl_->channels;
 
-    RtAudio::StreamOptions options;
-    options.flags      = RTAUDIO_SCHEDULE_REALTIME;
-    options.streamName = "rope-audioengine";
-
-    unsigned int frames = bufferFrames ? bufferFrames : kDefaultBufferFrames;
-    const unsigned int rate = sampleRate ? sampleRate : kDefaultSampleRate;
-
-    RtAudioErrorType err = impl_->dac.openStream(
-        &params, /*input=*/nullptr, RTAUDIO_FLOAT32, rate, &frames,
-        &Impl::audioCallback, impl_.get(), &options);
-    if (err != RTAUDIO_NO_ERROR) {
-        std::fprintf(stderr, "[rope] openStream failed: %s\n",
-                     impl_->dac.getErrorText().c_str());
+    if (!impl_->backend->start(config, &Impl::render, impl_.get())) {
+        std::fprintf(stderr, "[rope] failed to start audio backend\n");
+        impl_->backend.reset();
         return false;
     }
 
-    err = impl_->dac.startStream();
-    if (err != RTAUDIO_NO_ERROR) {
-        std::fprintf(stderr, "[rope] startStream failed: %s\n",
-                     impl_->dac.getErrorText().c_str());
-        impl_->dac.closeStream();
-        return false;
-    }
-
-    impl_->sampleRate = impl_->dac.getStreamSampleRate();
+    // Adopt whatever the device actually negotiated.
+    impl_->sampleRate = impl_->backend->sampleRate();
+    impl_->channels   = impl_->backend->channels();
     impl_->running    = true;
+
+    std::printf("[rope] backend: %s | %u Hz | %u ch\n",
+                impl_->backend->name(), impl_->sampleRate, impl_->channels);
     return true;
 }
 
 void AudioEngine::stop() {
     if (!impl_->running) return;
-    if (impl_->dac.isStreamRunning()) impl_->dac.stopStream();
-    if (impl_->dac.isStreamOpen())    impl_->dac.closeStream();
+    if (impl_->backend) impl_->backend->stop();
+    impl_->backend.reset();
     impl_->running = false;
 }
 

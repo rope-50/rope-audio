@@ -5,33 +5,9 @@
 # ---------------------------------------------------------------------------
 include(FetchContent)
 
-# --- RtAudio: cross-platform real-time audio I/O ---------------------------
-# Windows: WASAPI + DirectSound (ASIO needs the proprietary SDK, off by default)
-# macOS:   CoreAudio
-# Linux:   ALSA / PulseAudio / JACK
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)         # static-link RtAudio into the engine
-set(RTAUDIO_BUILD_TESTING OFF CACHE BOOL "" FORCE)     # skip RtAudio's own test/demo apps
-set(RTAUDIO_BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
-
-FetchContent_Declare(
-    rtaudio
-    GIT_REPOSITORY https://github.com/thestk/rtaudio.git
-    GIT_TAG        6.0.1
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(rtaudio)
-
-# In the FetchContent build tree RtAudio only defines the plain `rtaudio`
-# target; the namespaced `RtAudio::rtaudio` alias exists only in its installed
-# package config. Provide it here so the rest of the build can use the same
-# name whether RtAudio is fetched or found via find_package().
-if(NOT TARGET RtAudio::rtaudio)
-    add_library(RtAudio::rtaudio ALIAS rtaudio)
-endif()
-
 # --- dr_wav: single-header WAV decoder -------------------------------------
-# We expose the header via an INTERFACE target; the implementation is compiled
-# exactly once (DR_WAV_IMPLEMENTATION is defined in src/WavLoader.cpp).
+# Exposed via an INTERFACE target; the implementation is compiled exactly once
+# (DR_WAV_IMPLEMENTATION is defined in src/WavLoader.cpp).
 # NOTE: pin GIT_TAG to a commit hash for fully reproducible builds.
 FetchContent_Declare(
     dr_libs
@@ -43,3 +19,64 @@ FetchContent_MakeAvailable(dr_libs)
 
 add_library(dr_libs INTERFACE)
 target_include_directories(dr_libs INTERFACE ${dr_libs_SOURCE_DIR})
+
+# --- miniaudio: cross-platform audio device backend (DEFAULT) --------------
+# Covers Windows (WASAPI/DSound), macOS + iOS (CoreAudio), Linux (ALSA/Pulse/
+# JACK) and Android (AAudio/OpenSL ES) — i.e. every target platform. Single
+# header; the implementation is compiled in src/backends/MiniaudioBackend.cpp.
+if(ROPE_AUDIO_BACKEND_MINIAUDIO)
+    # miniaudio ships its own CMakeLists (a prebuilt library + vorbis/opus/SDL2
+    # examples) that we don't want. Point SOURCE_SUBDIR at a non-existent dir so
+    # FetchContent populates the source but skips add_subdirectory — we just need
+    # the single header, compiled with our own MA_NO_* config in
+    # src/backends/MiniaudioBackend.cpp.
+    FetchContent_Declare(
+        miniaudio
+        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+        GIT_TAG        0.11.22
+        GIT_SHALLOW    TRUE
+        SOURCE_SUBDIR  do-not-configure
+    )
+    FetchContent_MakeAvailable(miniaudio)
+
+    add_library(miniaudio_header INTERFACE)
+    target_include_directories(miniaudio_header INTERFACE ${miniaudio_SOURCE_DIR})
+
+    # miniaudio's runtime needs a few system libs on POSIX platforms.
+    if(ANDROID)
+        target_link_libraries(miniaudio_header INTERFACE OpenSLES log android)
+    elseif(APPLE)
+        # CoreAudio/AudioToolbox are pulled in by miniaudio via framework pragmas.
+    elseif(UNIX)
+        find_package(Threads REQUIRED)
+        target_link_libraries(miniaudio_header INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m)
+    endif()
+endif()
+
+# --- RtAudio: desktop backend, primarily for ASIO on Windows ---------------
+# miniaudio does not support ASIO (Steinberg licensing). RtAudio does and even
+# bundles the ASIO SDK sources, so enabling it gives low-latency pro audio for
+# the DAW use case. Built static and linked into the engine.
+if(ROPE_AUDIO_BACKEND_RTAUDIO)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    set(RTAUDIO_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    set(RTAUDIO_BUILD_STATIC_LIBS ON CACHE BOOL "" FORCE)
+
+    if(ROPE_AUDIO_RTAUDIO_ASIO)
+        set(RTAUDIO_API_ASIO ON CACHE BOOL "" FORCE)  # self-contained; no external SDK
+    endif()
+
+    FetchContent_Declare(
+        rtaudio
+        GIT_REPOSITORY https://github.com/thestk/rtaudio.git
+        GIT_TAG        6.0.1
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(rtaudio)
+
+    # The FetchContent tree only defines the plain `rtaudio` target; the
+    # namespaced alias exists only in RtAudio's installed package config.
+    if(NOT TARGET RtAudio::rtaudio)
+        add_library(RtAudio::rtaudio ALIAS rtaudio)
+    endif()
+endif()

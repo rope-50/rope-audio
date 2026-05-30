@@ -1,5 +1,6 @@
 #pragma once
 
+#include "rope/AudioBackend.hpp"
 #include "rope/AudioBuffer.hpp"
 #include "rope/WavLoader.hpp"
 
@@ -48,8 +49,11 @@ public:
     /// Open the default output device and start streaming.
     /// @param sampleRate   preferred rate in Hz (0 = engine default, 48000)
     /// @param bufferFrames preferred callback buffer size (0 = engine default)
+    /// @param backend      which platform backend to use (Default = miniaudio)
     /// @return true on success.
-    bool start(unsigned int sampleRate = 48000, unsigned int bufferFrames = 512);
+    bool start(unsigned int sampleRate   = 48000,
+               unsigned int bufferFrames = 512,
+               BackendType  backend      = BackendType::Default);
 
     /// Stop streaming and close the device. Safe to call multiple times.
     void stop();

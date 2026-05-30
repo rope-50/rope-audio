@@ -3,6 +3,9 @@
 /out/
 /cmake-build-*/
 
+# Generated test assets (recreate with tools/gen_test_wavs.ps1)
+/assets/
+
 # CMake
 CMakeUserPresets.json
 
