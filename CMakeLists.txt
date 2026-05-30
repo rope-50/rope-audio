@@ -58,7 +58,7 @@ include(cmake/Dependencies.cmake)
 # ---------------------------------------------------------------------------
 # The engine library
 # ---------------------------------------------------------------------------
-add_library(rope_audioengine
+set(ROPE_CORE_SOURCES
     src/AudioEngine.cpp
     src/AudioBackend.cpp
     src/WavLoader.cpp
@@ -66,36 +66,48 @@ add_library(rope_audioengine
     src/backends/MiniaudioBackend.cpp
     src/backends/RtAudioBackend.cpp
 )
+
+# Apply the shared include paths, features, deps, backend selection and warnings
+# to a target (used for both the static lib and the optional shared/FFI lib).
+function(rope_configure_target tgt)
+    target_include_directories(${tgt}
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src)      # for "backends/Backends.hpp"
+    target_compile_features(${tgt} PUBLIC cxx_std_20)
+    target_link_libraries(${tgt} PRIVATE dr_libs) # WAV decoding (always on)
+    # Backends (each guarded by its own compile definition; the .cpp files
+    # compile to nothing when their macro is undefined).
+    if(ROPE_AUDIO_BACKEND_MINIAUDIO)
+        target_compile_definitions(${tgt} PRIVATE ROPE_AUDIO_BACKEND_MINIAUDIO)
+        target_link_libraries(${tgt} PRIVATE miniaudio_header)
+    endif()
+    if(ROPE_AUDIO_BACKEND_RTAUDIO)
+        target_compile_definitions(${tgt} PRIVATE ROPE_AUDIO_BACKEND_RTAUDIO)
+        target_link_libraries(${tgt} PRIVATE RtAudio::rtaudio)
+    endif()
+    if(MSVC)
+        target_compile_options(${tgt} PRIVATE /W4 /permissive- /utf-8)
+    else()
+        target_compile_options(${tgt} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endfunction()
+
+add_library(rope_audioengine ${ROPE_CORE_SOURCES})
 add_library(rope::audioengine ALIAS rope_audioengine)
+rope_configure_target(rope_audioengine)
 
-target_include_directories(rope_audioengine
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src      # for "backends/Backends.hpp"
-)
-
-target_compile_features(rope_audioengine PUBLIC cxx_std_20)
-
-# WAV decoding (always on).
-target_link_libraries(rope_audioengine PRIVATE dr_libs)
-
-# Backends (each guarded by its own compile definition; the .cpp files compile
-# to nothing when their macro is undefined).
-if(ROPE_AUDIO_BACKEND_MINIAUDIO)
-    target_compile_definitions(rope_audioengine PRIVATE ROPE_AUDIO_BACKEND_MINIAUDIO)
-    target_link_libraries(rope_audioengine PRIVATE miniaudio_header)
-endif()
-if(ROPE_AUDIO_BACKEND_RTAUDIO)
-    target_compile_definitions(rope_audioengine PRIVATE ROPE_AUDIO_BACKEND_RTAUDIO)
-    target_link_libraries(rope_audioengine PRIVATE RtAudio::rtaudio)
-endif()
-
-if(MSVC)
-    target_compile_options(rope_audioengine PRIVATE /W4 /permissive- /utf-8)
-else()
-    target_compile_options(rope_audioengine PRIVATE -Wall -Wextra -Wpedantic)
+# Optional shared library exposing the C ABI with exported symbols — this is the
+# artifact FFI hosts (e.g. the Flutter plugin) load via dlopen/LoadLibrary.
+option(ROPE_AUDIO_BUILD_SHARED "Build a shared library exposing the C ABI (for FFI)" OFF)
+if(ROPE_AUDIO_BUILD_SHARED)
+    add_library(rope_audio_shared SHARED ${ROPE_CORE_SOURCES})
+    rope_configure_target(rope_audio_shared)
+    # ROPE_API -> __declspec(dllexport) for the rope_* C symbols on Windows.
+    target_compile_definitions(rope_audio_shared PRIVATE ROPE_BUILD_SHARED ROPE_BUILD_LIBRARY)
+    set_target_properties(rope_audio_shared PROPERTIES OUTPUT_NAME rope_audio)
 endif()
 
 # ---------------------------------------------------------------------------

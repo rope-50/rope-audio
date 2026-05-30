@@ -6,6 +6,15 @@
 # Generated test assets (recreate with tools/gen_test_wavs.ps1)
 /assets/
 
+# Dart / Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/pubspec.lock
+**/.flutter-plugins
+**/build/
+*.iml
+
 # CMake
 CMakeUserPresets.json
 

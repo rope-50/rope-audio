@@ -1,0 +1,12 @@
+name: rope_audio
+description: >-
+  Low-latency game audio for Dart & Flutter/Flame, powered by the native
+  rope-audioengine through its stable C ABI (dart:ffi).
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.4.0
+
+dependencies:
+  ffi: ^2.1.0
