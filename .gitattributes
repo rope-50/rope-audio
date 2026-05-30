@@ -1,0 +1,19 @@
+# Normalize line endings: store text as LF in the repo, check out native.
+* text=auto
+
+# Explicit text files (LF in repo)
+*.cpp     text
+*.hpp     text
+*.h       text
+*.cmake   text
+*.txt     text
+*.json    text
+*.md      text
+*.gitignore text
+*.gitattributes text
+
+# Binary assets — never touch line endings
+*.wav     binary
+*.ogg     binary
+*.flac    binary
+*.mp3     binary

@@ -1,0 +1,19 @@
+# Build output
+/build/
+/out/
+/cmake-build-*/
+
+# CMake
+CMakeUserPresets.json
+
+# Visual Studio
+.vs/
+*.user
+*.vcxproj.user
+
+# Editor / OS cruft
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
