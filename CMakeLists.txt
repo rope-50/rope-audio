@@ -62,6 +62,7 @@ add_library(rope_audioengine
     src/AudioEngine.cpp
     src/AudioBackend.cpp
     src/WavLoader.cpp
+    src/rope_c.cpp            # stable C ABI (include/rope/rope.h)
     src/backends/MiniaudioBackend.cpp
     src/backends/RtAudioBackend.cpp
 )

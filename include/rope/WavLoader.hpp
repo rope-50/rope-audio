@@ -2,6 +2,7 @@
 
 #include "rope/AudioBuffer.hpp"
 
+#include <cstddef>
 #include <filesystem>
 #include <optional>
 
@@ -14,5 +15,10 @@ namespace rope {
 /// This is a plain control-thread function: it allocates and does file I/O,
 /// so never call it from the audio callback.
 [[nodiscard]] std::optional<AudioBuffer> decodeWav(const std::filesystem::path& path);
+
+/// Decode a WAV from an in-memory buffer (e.g. a bundled/packed asset). The
+/// data only needs to live for the duration of this call. Returns std::nullopt
+/// on failure. Control-thread only.
+[[nodiscard]] std::optional<AudioBuffer> decodeWav(const void* data, std::size_t size);
 
 } // namespace rope
