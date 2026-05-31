@@ -15,6 +15,9 @@ import 'src/rope_ffi.dart';
 /// Which native backend to open (mirrors `rope_backend`).
 enum RopeBackend { defaultBackend, miniaudio, rtaudio, rtaudioAsio }
 
+/// Category bus a voice routes through (mirrors `rope_bus`).
+enum RopeBus { sfx, music, ui }
+
 /// Why a voice stopped (mirrors `rope_voice_end_reason`).
 enum RopeVoiceEndReason { natural, stopped, stolen }
 
@@ -151,7 +154,8 @@ class RopeEngine {
       double pan = 0.0,
       bool loop = false,
       double pitch = 1.0,
-      double fadeIn = 0.0}) {
+      double fadeIn = 0.0,
+      RopeBus bus = RopeBus.sfx}) {
     final pp = calloc<RopePlayParamsNative>();
     try {
       pp.ref.gain = gain;
@@ -159,6 +163,7 @@ class RopeEngine {
       pp.ref.loop = loop ? 1 : 0;
       pp.ref.pitch = pitch;
       pp.ref.fadeIn = fadeIn;
+      pp.ref.bus = bus.index;
       return _b.play(_engine, sound, pp);
     } finally {
       calloc.free(pp);
@@ -185,6 +190,11 @@ class RopeEngine {
 
   set masterVolume(double gain) => _b.setMasterVolume(_engine, gain);
   double get masterVolume => _b.getMasterVolume(_engine);
+
+  /// Set a category bus (SFX/Music/UI) group volume; smoothed (~5 ms).
+  void setBusVolume(RopeBus bus, double gain) =>
+      _b.setBusVolume(_engine, bus.index, gain);
+  double busVolume(RopeBus bus) => _b.getBusVolume(_engine, bus.index);
 
   /// Master-bus soft-clip limiter (on by default).
   set masterLimiterEnabled(bool enabled) =>

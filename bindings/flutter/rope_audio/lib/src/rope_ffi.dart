@@ -37,7 +37,9 @@ final class RopePlayParamsNative extends Struct {
   external double pitch;
   @Float()
   external double fadeIn;
-  @Array(2)
+  @Uint32()
+  external int bus;
+  @Array(1)
   external Array<Uint32> reserved;
 }
 
@@ -140,6 +142,14 @@ class RopeBindings {
                 Pointer<RopeEngineHandle>, double)>('rope_set_master_volume'),
         getMasterVolume = dl.lookupFunction<_F32EngineC, _F32EngineD>(
             'rope_get_master_volume'),
+        setBusVolume = dl.lookupFunction<
+            Int32 Function(Pointer<RopeEngineHandle>, Int32, Float),
+            int Function(Pointer<RopeEngineHandle>, int,
+                double)>('rope_set_bus_volume'),
+        getBusVolume = dl.lookupFunction<
+            Float Function(Pointer<RopeEngineHandle>, Int32),
+            double Function(
+                Pointer<RopeEngineHandle>, int)>('rope_get_bus_volume'),
         setMasterLimiter = dl.lookupFunction<
             Void Function(Pointer<RopeEngineHandle>, Int32),
             void Function(
@@ -181,6 +191,8 @@ class RopeBindings {
   final int Function(Pointer<RopeEngineHandle>, int, double) setVoicePitch;
   final int Function(Pointer<RopeEngineHandle>, double) setMasterVolume;
   final double Function(Pointer<RopeEngineHandle>) getMasterVolume;
+  final int Function(Pointer<RopeEngineHandle>, int, double) setBusVolume;
+  final double Function(Pointer<RopeEngineHandle>, int) getBusVolume;
   final void Function(Pointer<RopeEngineHandle>, int) setMasterLimiter;
   final int Function(Pointer<RopeEngineHandle>) getMasterLimiter;
   final int Function(Pointer<RopeEngineHandle>) engineSuspend;

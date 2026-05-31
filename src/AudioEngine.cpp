@@ -20,6 +20,7 @@ constexpr std::size_t kControlEventCap      = 16;   ///< pending control-origin 
 constexpr std::size_t kRetireQueueCap       = 512;  ///< pending voice-retire records
 constexpr unsigned int kDefaultSampleRate   = 48000;
 constexpr unsigned int kDefaultOutChannels  = 2;    ///< requested stereo output
+constexpr std::size_t  kBusBlockPrealloc    = 8192; ///< per-bus per-frame gain scratch (grows if exceeded)
 constexpr float        kCenterPanGain       = 0.70710678f; // cos(pi/4) = sin(pi/4)
 
 /// Constant-power pan law: pan in [-1,1] -> per-channel gains. Center is -3 dB
@@ -83,18 +84,19 @@ struct Ramp {
 };
 
 // --- Control -> audio thread messages --------------------------------------
-enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetPitch, SetMaster };
+enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetPitch, SetMaster, SetBus };
 
 struct Command {
     CommandType        type{};
     const AudioBuffer* buffer = nullptr;          // Play only
     VoiceHandle        voice  = kInvalidVoice;
     std::uint32_t      soundSlot = 0;             // Play only (-> sound bank index)
-    float              gain   = 1.0f;             // Play / SetGain / SetMaster
+    float              gain   = 1.0f;             // Play / SetGain / SetMaster / SetBus
     float              panL   = kCenterPanGain;   // Play / SetPan (precomputed)
     float              panR   = kCenterPanGain;
     float              pitch  = 1.0f;             // Play / SetPitch
     std::uint32_t      rampFrames = 0;            // Play fade-in / Stop fade-out / set* smoothing
+    std::uint32_t      bus    = 0;                // Play / SetBus (-> category bus index)
     bool               loop   = false;
 };
 
@@ -149,6 +151,7 @@ struct Voice {
     Ramp               panR;
     float              pitch     = 1.0f;
     std::uint32_t      soundSlot = 0;     // owning sound-bank index (for reclamation)
+    int                bus       = 0;     // category bus index [0, kBusCount)
     bool               loop      = false;
     bool               active    = false;
     bool               stopAtRampEnd = false; // fade-out: finish when gain ramp hits 0
@@ -194,6 +197,22 @@ struct AudioEngine::Impl {
     std::array<Voice, kMaxVoices> voices{};
     Ramp master{1.0f, 1.0f, 0.0f, 0};             // audio thread only (smoothed)
     std::atomic<bool> limiterEnabled{true};       // master-bus soft clip
+
+    // Category buses (SFX/Music/UI): smoothed group gains applied per-frame after
+    // the per-voice gain/pan and before the master. busBlock holds the precomputed
+    // per-frame gain for the current callback — one pass advances each bus ramp
+    // exactly once per frame, shared by every voice routed to that bus.
+    std::array<Ramp, kBusCount>               busGain{};   // audio thread only
+    std::array<std::vector<float>, kBusCount> busBlock{};  // per-callback scratch
+    std::array<std::atomic<float>, kBusCount> busShadow{}; // control-side mirror
+
+    Impl() {
+        for (std::size_t i = 0; i < kBusCount; ++i) {
+            busGain[i].jump(1.0f);
+            busShadow[i].store(1.0f, std::memory_order_relaxed);
+            busBlock[i].assign(kBusBlockPrealloc, 1.0f);  // preallocate (RT-safe steady state)
+        }
+    }
 
     // Control -> audio command channel + audio/control -> poll event channels.
     SpscQueue<Command, kCommandQueueCap>      commands;
@@ -252,6 +271,7 @@ struct AudioEngine::Impl {
                 slot->panR.jump(cmd.panR);
                 slot->pitch     = cmd.pitch;
                 slot->soundSlot = cmd.soundSlot;
+                slot->bus       = (cmd.bus < kBusCount) ? static_cast<int>(cmd.bus) : 0;
                 slot->loop      = cmd.loop;
                 slot->stopAtRampEnd = false;
                 slot->id        = cmd.voice;
@@ -300,6 +320,10 @@ struct AudioEngine::Impl {
             case CommandType::SetMaster:
                 master.to(cmd.gain, static_cast<int>(cmd.rampFrames));
                 break;
+            case CommandType::SetBus:
+                if (cmd.bus < kBusCount)
+                    busGain[cmd.bus].to(cmd.gain, static_cast<int>(cmd.rampFrames));
+                break;
             }
         }
     }
@@ -309,6 +333,15 @@ struct AudioEngine::Impl {
         std::memset(out, 0, sizeof(float) * nFrames * outCh);
 
         const unsigned int rate = sampleRate.load(std::memory_order_relaxed);
+
+        // Precompute each bus's smoothed per-frame gain for this block. A single
+        // pass advances each bus ramp exactly once per frame; voices on the bus
+        // then just index it (so a shared ramp is never advanced per-voice).
+        for (std::size_t b = 0; b < kBusCount; ++b) {
+            if (busBlock[b].size() < nFrames) busBlock[b].resize(nFrames); // offline overflow only
+            float* bg = busBlock[b].data();
+            for (unsigned int f = 0; f < nFrames; ++f) bg[f] = busGain[b].next();
+        }
 
         for (Voice& v : voices) {
             if (!v.active || v.buffer == nullptr) continue;
@@ -354,11 +387,12 @@ struct AudioEngine::Impl {
                 const float g  = v.gain.next();   // smoothed gain (and fades)
                 const float pl = v.panL.next();
                 const float pr = v.panR.next();
+                const float bg = busBlock[v.bus][f];   // category bus group gain
                 if (outCh == 1) {
-                    out[f] += 0.5f * (l * pl + r * pr) * g; // downmix
+                    out[f] += 0.5f * (l * pl + r * pr) * g * bg; // downmix
                 } else {
-                    out[f * outCh + 0] += l * g * pl;
-                    out[f * outCh + 1] += r * g * pr;
+                    out[f * outCh + 0] += l * g * pl * bg;
+                    out[f * outCh + 1] += r * g * pr * bg;
                 }
                 v.position += step;
             }
@@ -553,6 +587,7 @@ VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
     computePan(params.pan, cmd.panL, cmd.panR);   // off the audio thread
     cmd.pitch      = clampPitch(params.pitch);
     cmd.rampFrames = impl_->framesForSeconds(params.fadeIn);   // fade-in
+    cmd.bus        = static_cast<std::uint32_t>(params.bus);   // clamped on the audio thread
     cmd.loop       = params.loop;
 
     if (!impl_->pushCommand(cmd)) {
@@ -620,6 +655,25 @@ bool AudioEngine::setMasterVolume(float gain) {
 
 float AudioEngine::masterVolume() const noexcept {
     return impl_->masterShadow.load(std::memory_order_relaxed);
+}
+
+bool AudioEngine::setBusVolume(Bus bus, float gain) {
+    const std::size_t idx = static_cast<std::size_t>(bus);
+    if (idx >= kBusCount) return false;
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    impl_->busShadow[idx].store(gain, std::memory_order_relaxed);
+    Command cmd;
+    cmd.type       = CommandType::SetBus;
+    cmd.bus        = static_cast<std::uint32_t>(idx);
+    cmd.gain       = gain;
+    cmd.rampFrames = impl_->framesForSeconds(kSmoothSeconds);  // anti-zipper
+    return impl_->pushCommand(cmd);
+}
+
+float AudioEngine::busVolume(Bus bus) const noexcept {
+    const std::size_t idx = static_cast<std::size_t>(bus);
+    if (idx >= kBusCount) return 0.0f;
+    return impl_->busShadow[idx].load(std::memory_order_relaxed);
 }
 
 void AudioEngine::setMasterLimiterEnabled(bool enabled) {

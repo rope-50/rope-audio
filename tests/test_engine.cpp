@@ -351,3 +351,47 @@ TEST(Fades, SetVoiceGainSmoothsInsteadOfJumping) {
     e.renderOffline(settle.data(), 512);
     EXPECT_NEAR(settle[500 * 2], 0.0f, 0.01f);          // now silent
 }
+
+TEST(Buses, DefaultsToSfxAtUnityGain) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    EXPECT_FLOAT_EQ(e.busVolume(Bus::Sfx), 1.0f);
+    EXPECT_FLOAT_EQ(e.busVolume(Bus::Music), 1.0f);
+    EXPECT_FLOAT_EQ(e.busVolume(Bus::Ui), 1.0f);
+}
+
+TEST(Buses, BusVolumeScalesOnlyItsGroup) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+
+    // SFX voice hard-left, Music voice hard-right -> isolated on L / R channels.
+    e.play(s, PlayParams{.pan = -1.0f, .bus = Bus::Sfx});
+    e.play(s, PlayParams{.pan = 1.0f, .bus = Bus::Music});
+    e.setBusVolume(Bus::Music, 0.5f);                  // half the music group only
+
+    std::vector<float> out(512 * 2, 0.0f);
+    e.renderOffline(out.data(), 512);                  // past the ~5 ms bus ramp
+    EXPECT_NEAR(out[500 * 2 + 0], 0.5f, 0.02f);        // L: SFX unaffected
+    EXPECT_NEAR(out[500 * 2 + 1], 0.25f, 0.02f);       // R: Music halved
+    EXPECT_FLOAT_EQ(e.busVolume(Bus::Music), 0.5f);
+}
+
+TEST(Buses, BusVolumeSmoothsInsteadOfJumping) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+    e.play(s, PlayParams{.pan = 1.0f, .bus = Bus::Music});
+
+    std::vector<float> out(8 * 2, 0.0f);
+    e.renderOffline(out.data(), 8);
+    e.setBusVolume(Bus::Music, 0.0f);                  // ramps to 0 over ~5 ms
+
+    std::fill(out.begin(), out.end(), 0.0f);
+    e.renderOffline(out.data(), 8);                    // 8 << 240: not silent yet
+    EXPECT_GT(std::abs(out[1]), 0.3f);                 // did not jump straight to 0
+
+    std::vector<float> settle(512 * 2, 0.0f);
+    e.renderOffline(settle.data(), 512);
+    EXPECT_NEAR(settle[500 * 2 + 1], 0.0f, 0.01f);     // now silent
+}

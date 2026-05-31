@@ -11,19 +11,59 @@ have since landed; unchecked boxes are still open.
 
 ---
 
-## 1. Platform reach — native plugin glue (deferred to the macOS M4 machine)
+## 1. Platform reach — native plugin glue (the macOS M4 machine)
 
-The core builds and is verified on Windows desktop (miniaudio/WASAPI). The
-remaining work is the per-platform plugin packaging + on-device verification.
+The core builds and is verified on Windows desktop (miniaudio/WASAPI). What's
+left is per-platform plugin packaging + on-device verification — work that needs
+toolchains/devices not on the Windows box. The **Mac mini M4 (Apple Silicon,
+arm64)** unlocks most of it because Xcode + CocoaPods cover macOS/iOS, and the
+Android NDK is installable there too.
 
-- [ ] **Android**: Flutter plugin Gradle/CMake glue; build `librope_audio.so`
-      for `arm64-v8a`/`armeabi-v7a`/`x86_64`; verify on a device/emulator (AAudio/OpenSL).
-- [ ] **iOS**: CocoaPods `.podspec` compiling the core as a static lib; link
-      CoreAudio/AudioToolbox; verify `__Internal` symbol resolution on device.
-- [ ] **macOS**: Flutter macOS plugin + `.podspec`; verify on the M4 (CoreAudio).
-- [ ] **Linux**: Flutter Linux plugin CMake; verify (ALSA/PulseAudio).
-- [ ] Audio-focus / interruption handling per OS (phone call, route change).
-- [ ] CI: add Android (NDK cross-compile) and iOS/macOS build jobs.
+**What the M4 specifically unlocks (and why):**
+
+- **macOS desktop (CoreAudio)** — *highest priority, fully verifiable on the M4.*
+  - [ ] Flutter **macOS** plugin: `bindings/flutter/rope_audio/macos/rope_audio.podspec`
+        compiling the core sources + linking `CoreAudio`/`AudioToolbox`/`AudioUnit`.
+  - [ ] Build the `arm64` (Apple Silicon) shared/static lib; confirm miniaudio's
+        CoreAudio backend opens the default device.
+  - [ ] Verify end-to-end with `flutter run -d macos` (same Flame example as
+        Windows) — panned SFX + music + master/bus volume + events.
+  - [ ] Run the C++ test suite + the C# smoke natively on `osx-arm64`
+        (`cmake` + `ctest`, `dotnet` if the SDK is installed) — a second
+        verified desktop platform.
+- **iOS (CoreAudio / AVAudioSession)** — *verifiable on a device/simulator from the M4.*
+  - [ ] `ios/rope_audio.podspec` compiling the core as a **static** lib; the
+        engine links into the app, so Dart/C# resolve symbols via `__Internal`
+        (already branched in the bindings).
+  - [ ] Configure `AVAudioSession` (category/activation) for playback; handle
+        interruptions (calls) and route changes → map to suspend/resume.
+  - [ ] Verify on the iOS Simulator (arm64) and, with a free Apple ID + codesign,
+        on a real device.
+- **Android (AAudio/OpenSL ES)** — *needs the NDK (installable on the M4) + a device/emulator.*
+  - [ ] Flutter plugin Gradle + CMake glue; build `librope_audio.so` for
+        `arm64-v8a` / `armeabi-v7a` / `x86_64` via the NDK.
+  - [ ] Verify on an emulator/device; confirm AAudio (API 27+) path and the
+        OpenSL fallback. Handle audio focus + lifecycle (`onPause`/`onResume`).
+- **Linux desktop (ALSA/PulseAudio)** — *not native to the M4;* do via a Linux
+  VM/container on the Mac or keep it CI-only (the `csharp` job already builds the
+  Linux `.so`; a desktop Flutter run needs a Linux GUI session).
+  - [ ] Flutter **Linux** plugin CMake (compile core, link nothing extra —
+        miniaudio dlopens ALSA/Pulse at runtime).
+
+**Cross-cutting (do once the platforms above build):**
+
+- [ ] Unify the four Flutter platform builds to compile the **same** core source
+      list (reuse the existing `windows/CMakeLists.txt` pattern / a shared `.cmake`).
+- [ ] Audio-focus / interruption handling abstracted per OS → existing
+      `suspend()`/`resume()` + Suspended/Resumed events.
+- [ ] CI: add **macOS** (native) and **Android NDK cross-compile** build jobs;
+      iOS build job (no device, build-only).
+- [ ] Codesigning notes per platform (local-run gotchas, like SAC on Windows).
+
+> **Apple Silicon note:** everything builds `arm64` natively on the M4 (no
+> Rosetta). For distribution you'll later want **universal** macOS binaries
+> (`arm64` + `x86_64`) and an `xcframework` for iOS — that belongs to item 4
+> (packaging), not here.
 
 ## 2. Godot — second binding half (GDScript / GDExtension)
 
@@ -41,7 +81,9 @@ serves pure-GDScript users.
       the current linear interpolator; A/B test vs linear.
 - [ ] **Sample-accurate scheduling** — start a voice at an absolute frame time
       (tight musical/looping sync).
-- [ ] **Category buses** (SFX / Music / UI) with per-group volume + mute/solo.
+- [x] **Category buses** (SFX / Music / UI) with smoothed per-group volume
+      (voice → bus → master → limiter; RT-safe precomputed per-frame bus gain).
+      *Sub-item still open: per-bus mute/solo.*
 - [ ] **Device-changed / auto-reroute** events (miniaudio device-notification
       plumbing) + host re-query of rate/channels.
 - [ ] **OGG/FLAC/MP3 decoding** (dr_libs / stb_vorbis) beyond WAV.

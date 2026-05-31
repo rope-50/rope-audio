@@ -52,6 +52,13 @@ namespace Rope
         Stolen = 2,
     }
 
+    public enum RopeBus
+    {
+        Sfx = 0,
+        Music = 1,
+        Ui = 2,
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RopeConfig
     {
@@ -70,7 +77,8 @@ namespace Rope
         public int Loop;     // 0 / non-zero
         public float Pitch;  // default 1.0 (<=0 => 1.0)
         public float FadeIn; // seconds (0 = full gain at start)
-        private uint _r0, _r1; // _reserved[2]
+        public RopeBus Bus;  // category bus (Sfx default)
+        private uint _r0;    // _reserved[1]
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -126,6 +134,8 @@ namespace Rope
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_voice_pitch(IntPtr engine, ulong voice, float pitch);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_master_volume(IntPtr engine, float gain);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern float rope_get_master_volume(IntPtr engine);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_bus_volume(IntPtr engine, RopeBus bus, float gain);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern float rope_get_bus_volume(IntPtr engine, RopeBus bus);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern void rope_set_master_limiter(IntPtr engine, int enabled);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern int rope_get_master_limiter(IntPtr engine);
 

@@ -35,7 +35,7 @@ extern "C" {
 
 /* ---- Versioning ---------------------------------------------------------- */
 #define ROPE_ABI_VERSION_MAJOR 0u
-#define ROPE_ABI_VERSION_MINOR 4u
+#define ROPE_ABI_VERSION_MINOR 5u
 
 /* ---- Handles ------------------------------------------------------------- */
 typedef struct rope_engine* rope_engine_t; /* opaque; NULL = invalid */
@@ -86,6 +86,13 @@ typedef enum rope_voice_end_reason {
     ROPE_VOICE_END_FORCE_U32 = 0x7fffffff
 } rope_voice_end_reason;
 
+typedef enum rope_bus {
+    ROPE_BUS_SFX = 0,                 /* default */
+    ROPE_BUS_MUSIC = 1,
+    ROPE_BUS_UI = 2,
+    ROPE_BUS_FORCE_U32 = 0x7fffffff
+} rope_bus;
+
 /* ---- POD structs (append into _reserved only) ---------------------------- */
 typedef struct rope_config {
     uint32_t     sample_rate;    /* 0 = engine default (48000) */
@@ -101,7 +108,8 @@ typedef struct rope_play_params {
     int32_t  loop;        /* 0 = one-shot, non-zero = loop */
     float    pitch;       /* speed/pitch ratio, default 1.0 (<=0 is treated as 1.0) */
     float    fade_in;     /* fade-in seconds (0 = full gain at start) */
-    uint32_t _reserved[2];/* future: bus_id, start_offset... */
+    rope_bus bus;         /* category bus (ROPE_BUS_SFX default) */
+    uint32_t _reserved[1];/* future: start_offset... */
 } rope_play_params;
 
 typedef struct rope_event {
@@ -147,6 +155,9 @@ ROPE_API rope_result ROPE_CALL rope_set_voice_pan(rope_engine_t, rope_voice, flo
 ROPE_API rope_result ROPE_CALL rope_set_voice_pitch(rope_engine_t, rope_voice, float pitch);
 ROPE_API rope_result ROPE_CALL rope_set_master_volume(rope_engine_t, float gain);
 ROPE_API float       ROPE_CALL rope_get_master_volume(rope_engine_t);
+/* Category bus (SFX/Music/UI) group volume; smoothed (~5 ms). */
+ROPE_API rope_result ROPE_CALL rope_set_bus_volume(rope_engine_t, rope_bus, float gain);
+ROPE_API float       ROPE_CALL rope_get_bus_volume(rope_engine_t, rope_bus);
 /* Master-bus soft-clip limiter (on by default; non-zero = enabled). */
 ROPE_API void        ROPE_CALL rope_set_master_limiter(rope_engine_t, int32_t enabled);
 ROPE_API int32_t     ROPE_CALL rope_get_master_limiter(rope_engine_t);

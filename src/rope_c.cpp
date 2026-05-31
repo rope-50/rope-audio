@@ -42,6 +42,15 @@ rope_event_type mapEventType(rope::EventType t) {
     }
 }
 
+rope::Bus mapBus(rope_bus b) {
+    switch (b) {
+    case ROPE_BUS_MUSIC: return rope::Bus::Music;
+    case ROPE_BUS_UI:    return rope::Bus::Ui;
+    case ROPE_BUS_SFX:
+    default:             return rope::Bus::Sfx;
+    }
+}
+
 rope_voice_end_reason mapReason(rope::VoiceEndReason r) {
     switch (r) {
     case rope::VoiceEndReason::Stopped: return ROPE_VOICE_END_STOPPED;
@@ -172,6 +181,7 @@ rope_voice rope_play(rope_engine_t e, rope_sound s, const rope_play_params* p) {
             params.loop   = p->loop != 0;
             params.pitch  = (p->pitch > 0.0f) ? p->pitch : 1.0f;   // 0/NaN -> neutral
             params.fadeIn = (p->fade_in > 0.0f) ? p->fade_in : 0.0f;
+            params.bus    = mapBus(p->bus);
         }
         return e->engine.play(s, params);
     } catch (...) {
@@ -225,6 +235,18 @@ rope_result rope_set_master_volume(rope_engine_t e, float gain) {
 float rope_get_master_volume(rope_engine_t e) {
     if (!e) return 0.0f;
     try { return e->engine.masterVolume(); }
+    catch (...) { return 0.0f; }
+}
+
+rope_result rope_set_bus_volume(rope_engine_t e, rope_bus bus, float gain) {
+    if (!e || !isFiniteF(gain)) return ROPE_ERR_INVALID_ARGUMENT;
+    try { return e->engine.setBusVolume(mapBus(bus), gain) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
+    catch (...) { return ROPE_ERR_UNKNOWN; }
+}
+
+float rope_get_bus_volume(rope_engine_t e, rope_bus bus) {
+    if (!e) return 0.0f;
+    try { return e->engine.busVolume(mapBus(bus)); }
     catch (...) { return 0.0f; }
 }
 

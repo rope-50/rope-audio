@@ -80,7 +80,7 @@ namespace Rope
         /// fades gain up over the given seconds.</summary>
         /// <returns>A voice handle, or <see cref="RopeHandle.InvalidVoice"/>.</returns>
         public ulong Play(uint sound, float gain = 1f, float pan = 0f, bool loop = false,
-                          float pitch = 1f, float fadeIn = 0f)
+                          float pitch = 1f, float fadeIn = 0f, RopeBus bus = RopeBus.Sfx)
         {
             Native.rope_play_params_default(out var p);
             p.Gain = gain;
@@ -88,6 +88,7 @@ namespace Rope
             p.Loop = loop ? 1 : 0;
             p.Pitch = pitch;
             p.FadeIn = fadeIn;
+            p.Bus = bus;
             return Native.rope_play(_engine, sound, in p);
         }
 
@@ -112,6 +113,11 @@ namespace Rope
             get => Native.rope_get_master_volume(_engine);
             set => Native.rope_set_master_volume(_engine, value);
         }
+
+        /// <summary>Set a category bus (SFX/Music/UI) group volume; smoothed (~5 ms).</summary>
+        public void SetBusVolume(RopeBus bus, float gain) =>
+            Native.rope_set_bus_volume(_engine, bus, gain);
+        public float BusVolume(RopeBus bus) => Native.rope_get_bus_volume(_engine, bus);
 
         /// <summary>Master-bus soft-clip limiter (on by default).</summary>
         public bool MasterLimiterEnabled

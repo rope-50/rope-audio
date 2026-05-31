@@ -160,11 +160,11 @@ Done in v0.1:
 - [x] Master-bus soft-clip limiter (prevents harsh clipping; toggleable)
 - [x] Per-voice fade in/out + gain/pan/master smoothing (anti-zipper)
 - [x] Unity / Godot **C# (P/Invoke) bindings** + idiomatic wrapper (headless smoke in CI)
+- [x] Category buses (SFX / Music / UI) with smoothed group volume
 
 Next:
 - [ ] Higher-quality resampling (windowed-sinc)
 - [ ] Sample-accurate scheduling (start voices at an absolute frame time)
-- [ ] Category buses (SFX/Music/UI) with group volume
 - [ ] Mobile/desktop plugin glue beyond Windows (Android/iOS/macOS/Linux)
 - [ ] Device-changed / auto-reroute events
 - [ ] OGG/FLAC/MP3 decoding

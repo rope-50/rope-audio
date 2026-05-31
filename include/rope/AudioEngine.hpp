@@ -20,6 +20,14 @@ using VoiceHandle = std::uint64_t;
 inline constexpr SoundHandle kInvalidSound = 0xFFFFFFFFu;
 inline constexpr VoiceHandle kInvalidVoice = 0;
 
+/// Category bus a voice is routed through. Each bus has its own group volume
+/// applied after the per-voice gain/pan and before the master — the usual game
+/// mix split (separate SFX / Music / UI sliders).
+enum class Bus : std::uint32_t { Sfx = 0, Music = 1, Ui = 2 };
+
+/// Number of category buses.
+inline constexpr std::size_t kBusCount = 3;
+
 /// Per-voice playback options.
 struct PlayParams {
     float gain   = 1.0f;  ///< linear gain multiplier
@@ -27,6 +35,7 @@ struct PlayParams {
     bool  loop   = false; ///< restart from the top when the end is reached
     float pitch  = 1.0f;  ///< speed/pitch ratio (1 = original, 2 = +1 octave, 0.5 = -1 octave)
     float fadeIn = 0.0f;  ///< fade-in time in seconds (0 = start at full gain)
+    Bus   bus    = Bus::Sfx; ///< category bus this voice is routed through
 };
 
 /// Reason a voice stopped (carried by Event::reason).
@@ -140,6 +149,14 @@ public:
     bool setMasterVolume(float gain);
 
     [[nodiscard]] float masterVolume() const noexcept;
+
+    /// Set the group volume for a category bus (SFX / Music / UI). Applied to
+    /// every voice routed through that bus, after per-voice gain and before the
+    /// master. Smoothed (~5 ms) to avoid zipper noise.
+    /// @return false if the command queue was full.
+    bool setBusVolume(Bus bus, float gain);
+
+    [[nodiscard]] float busVolume(Bus bus) const noexcept;
 
     /// Enable/disable the master-bus soft-clip limiter (on by default).
     /// Transparent below ~0.7, then smoothly limits peaks to +-1.0 — prevents
