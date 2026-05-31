@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The binding library. Targets netstandard2.1 so the same assembly works in
+    Unity (which consumes netstandard2.1), Godot .NET, and modern .NET apps.
+    It is pure managed P/Invoke; the native rope_audio library is supplied by
+    the host (see README for Unity/Godot placement).
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>RopeAudio</AssemblyName>
+    <RootNamespace>Rope</RootNamespace>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>0.4.0</Version>
+    <Description>C# (P/Invoke) bindings for the rope-audioengine real-time audio engine. Usable from Unity and Godot .NET.</Description>
+  </PropertyGroup>
+
+</Project>

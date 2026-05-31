@@ -18,6 +18,10 @@
 # CMake
 CMakeUserPresets.json
 
+# .NET / C#
+[Bb]in/
+[Oo]bj/
+
 # Visual Studio
 .vs/
 *.user

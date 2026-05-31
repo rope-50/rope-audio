@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Rope.Smoke</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../RopeAudio/RopeAudio.csproj" />
+  </ItemGroup>
+
+  <!--
+    The native library (rope_audio.dll / librope_audio.so / librope_audio.dylib)
+    must sit next to the built exe at runtime. Build it with
+    -DROPE_AUDIO_BUILD_SHARED=ON and either copy it into the output directory or
+    set ROPE_AUDIO_NATIVE to its full path before building:
+
+      <None Include="$(ROPE_AUDIO_NATIVE)" CopyToOutputDirectory="PreserveNewest" />
+  -->
+  <ItemGroup Condition="'$(ROPE_AUDIO_NATIVE)' != ''">
+    <None Include="$(ROPE_AUDIO_NATIVE)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>%(Filename)%(Extension)</Link>
+    </None>
+  </ItemGroup>
+
+</Project>

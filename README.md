@@ -41,6 +41,8 @@ src/
   backends/              miniaudio (default) and RtAudio/ASIO device backends
 bindings/flutter/
   rope_audio/            Flutter FFI plugin (Dart API + Flame example)
+bindings/csharp/
+  RopeAudio/             C# P/Invoke bindings (Unity / Godot .NET) + headless smoke
 examples/
   play_wav.cpp           C++ demo: panned playback + master + events
   rope_c_smoke.c         C ABI smoke test (file + in-memory load)
@@ -157,6 +159,7 @@ Done in v0.1:
 - [x] Live reclamation of unloaded sounds (memory bounded to live data, refcounted)
 - [x] Master-bus soft-clip limiter (prevents harsh clipping; toggleable)
 - [x] Per-voice fade in/out + gain/pan/master smoothing (anti-zipper)
+- [x] Unity / Godot **C# (P/Invoke) bindings** + idiomatic wrapper (headless smoke in CI)
 
 Next:
 - [ ] Higher-quality resampling (windowed-sinc)
