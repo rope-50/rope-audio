@@ -17,14 +17,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(dr_libs)
 
-add_library(dr_libs INTERFACE)
-target_include_directories(dr_libs INTERFACE ${dr_libs_SOURCE_DIR})
+# Header-only: WAV/FLAC/MP3 implementations are compiled inside our own TUs, so
+# the engine target just needs the include dir at build time (not as a link dep —
+# keeping it out of the static lib's link interface makes install/export clean).
+set(ROPE_DR_LIBS_INCLUDE_DIR "${dr_libs_SOURCE_DIR}" CACHE INTERNAL "rope: dr_libs include dir")
 
 # --- stb_vorbis: OGG/Vorbis decoder ----------------------------------------
-# dr_libs covers WAV/FLAC/MP3 but not Vorbis. stb_vorbis.c is compiled as its
-# own C static library (warnings silenced — it is old, very noisy C, and we keep
-# /W4 -Wall on our own code). WavLoader.cpp includes it header-only for the
-# prototypes; the PUBLIC include dir makes `#include "stb_vorbis.c"` resolve.
+# dr_libs covers WAV/FLAC/MP3 but not Vorbis. stb_vorbis.c is folded directly
+# into the engine target (see the top-level CMakeLists, warnings silenced) so the
+# static library is self-contained for install/find_package. WavLoader.cpp also
+# includes it header-only for the prototypes via this include dir.
 FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
@@ -33,17 +35,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(stb)
 
-add_library(stb_vorbis STATIC ${stb_SOURCE_DIR}/stb_vorbis.c)
-target_include_directories(stb_vorbis PUBLIC ${stb_SOURCE_DIR})
-# PIC so it can be linked into the shared/FFI library on Linux.
-set_target_properties(stb_vorbis PROPERTIES POSITION_INDEPENDENT_CODE ON)
-# Silence its (very noisy) warnings; the CRT is pinned to /MD project-wide in the
-# top-level CMakeLists (CMAKE_MSVC_RUNTIME_LIBRARY) so it shares one heap.
-if(MSVC)
-    target_compile_options(stb_vorbis PRIVATE /w)
-else()
-    target_compile_options(stb_vorbis PRIVATE -w)
-endif()
+set(ROPE_STB_VORBIS_SRC  "${stb_SOURCE_DIR}/stb_vorbis.c" CACHE INTERNAL "rope: stb_vorbis source")
+set(ROPE_STB_INCLUDE_DIR "${stb_SOURCE_DIR}"              CACHE INTERNAL "rope: stb include dir")
 
 # --- miniaudio: cross-platform audio device backend (DEFAULT) --------------
 # Covers Windows (WASAPI/DSound), macOS + iOS (CoreAudio), Linux (ALSA/Pulse/
@@ -64,17 +57,20 @@ if(ROPE_AUDIO_BACKEND_MINIAUDIO)
     )
     FetchContent_MakeAvailable(miniaudio)
 
-    add_library(miniaudio_header INTERFACE)
-    target_include_directories(miniaudio_header INTERFACE ${miniaudio_SOURCE_DIR})
+    set(ROPE_MINIAUDIO_INCLUDE_DIR "${miniaudio_SOURCE_DIR}" CACHE INTERNAL "rope: miniaudio include dir")
 
-    # miniaudio's runtime needs a few system libs on POSIX platforms.
+    # miniaudio's runtime needs a few system libs on POSIX platforms. These are
+    # linked PUBLICly on the engine target so a consumer of the (static) library
+    # pulls them too; the generated package config find_dependency()s Threads.
     if(ANDROID)
-        target_link_libraries(miniaudio_header INTERFACE OpenSLES log android)
+        set(ROPE_MINIAUDIO_SYSTEM_LIBS OpenSLES log android CACHE INTERNAL "rope: miniaudio sys libs")
     elseif(APPLE)
-        # CoreAudio/AudioToolbox are pulled in by miniaudio via framework pragmas.
+        set(ROPE_MINIAUDIO_SYSTEM_LIBS "" CACHE INTERNAL "rope: miniaudio sys libs") # frameworks via pragmas
     elseif(UNIX)
         find_package(Threads REQUIRED)
-        target_link_libraries(miniaudio_header INTERFACE Threads::Threads ${CMAKE_DL_LIBS} m)
+        set(ROPE_MINIAUDIO_SYSTEM_LIBS Threads::Threads ${CMAKE_DL_LIBS} m CACHE INTERNAL "rope: miniaudio sys libs")
+    else()
+        set(ROPE_MINIAUDIO_SYSTEM_LIBS "" CACHE INTERNAL "rope: miniaudio sys libs")
     endif()
 endif()
 

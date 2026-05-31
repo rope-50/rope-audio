@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+# rope links a few system libraries (pthread/dl/m) for miniaudio on POSIX; make
+# sure they resolve for consumers of the static library.
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/ropeTargets.cmake")
+
+check_required_components(rope)

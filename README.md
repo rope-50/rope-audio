@@ -111,6 +111,27 @@ powershell -ExecutionPolicy Bypass -File tools/gen_test_wavs.ps1
 ./build/vs2022/bin/Release/rope_c_smoke.exe   # C ABI smoke (run from repo root)
 ```
 
+### Using rope in another C++ project
+
+Two supported paths:
+
+```cmake
+# 1) Vendor from source (no install) — recommended:
+include(FetchContent)
+FetchContent_Declare(rope GIT_REPOSITORY https://github.com/rope-50/rope-audio.git GIT_TAG main)
+FetchContent_MakeAvailable(rope)
+target_link_libraries(my_app PRIVATE rope::audioengine)
+
+# 2) Or install once and find_package:
+#   cmake -S . -B build -DROPE_AUDIO_INSTALL=ON -DROPE_AUDIO_BACKEND_RTAUDIO=OFF
+#   cmake --build build && cmake --install build --prefix <prefix>
+find_package(rope CONFIG REQUIRED)        # gives the imported target rope::audioengine
+```
+
+The installed static library is self-contained (the decoders are folded in), so a
+consumer only needs `rope::audioengine`. A CI job builds + installs rope and links
+a `find_package` consumer (`tests/consumer/`) on every push.
+
 ### Flutter / Flame
 
 The plugin and a Flame demo live in `bindings/flutter/rope_audio`:

@@ -66,6 +66,31 @@ jobs:
       - name: Test
         run: flutter test
 
+  install-consumer:
+    name: C++ install + find_package consumer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and install rope (miniaudio-only)
+        run: >
+          cmake -S . -B build-install
+          -DCMAKE_BUILD_TYPE=Release
+          -DROPE_AUDIO_INSTALL=ON
+          -DROPE_AUDIO_BACKEND_RTAUDIO=OFF
+          -DROPE_AUDIO_BUILD_EXAMPLES=OFF
+          -DROPE_AUDIO_BUILD_TESTS=OFF
+          && cmake --build build-install --config Release
+          && cmake --install build-install --prefix "$PWD/stage"
+
+      - name: Build and run a find_package(rope) consumer
+        run: >
+          cmake -S tests/consumer -B build-consumer
+          -DCMAKE_BUILD_TYPE=Release
+          -Drope_DIR="$PWD/stage/lib/cmake/rope"
+          && cmake --build build-consumer --config Release
+          && ./build-consumer/consumer
+
   csharp:
     name: C# bindings (build + smoke)
     runs-on: ubuntu-latest

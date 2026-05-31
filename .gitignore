@@ -1,5 +1,7 @@
 # Build output
 /build/
+/build-*/
+/stage/
 /out/
 /cmake-build-*/
 

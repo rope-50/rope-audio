@@ -101,8 +101,9 @@ serves pure-GDScript users.
       (`win-x64`, `linux-x64`, `osx-arm64`, …) + a Unity UPM package variant.
 - [ ] **GitHub Releases**: tagged versions with prebuilt shared libraries and
       headers (`rope.h`) attached as assets.
-- [ ] CMake `install()` + a CMake package config (`find_package(rope)`) and/or
-      a `FetchContent`-friendly entry for C++ consumers.
+- [x] CMake `install()` + package config (`find_package(rope)` → `rope::audioengine`)
+      and a `FetchContent`-friendly target. Self-contained static lib (decoders
+      folded in); a CI job installs rope and links a `find_package` consumer.
 - [ ] Semantic-versioned ABI policy doc (when MAJOR/MINOR bump; the
       `rope_abi_version()` contract).
 - [ ] **Standalone `*-starter` template repos** (post-publish): mirror the key
