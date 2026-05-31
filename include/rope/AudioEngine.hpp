@@ -28,6 +28,12 @@ enum class Bus : std::uint32_t { Sfx = 0, Music = 1, Ui = 2 };
 /// Number of category buses.
 inline constexpr std::size_t kBusCount = 3;
 
+/// Per-voice resampling quality.
+///   * Linear  — cheap 2-point interpolation (default).
+///   * Sinc    — band-limited windowed-sinc; higher quality and anti-aliased on
+///               downsampling / pitch-up, at a higher CPU cost.
+enum class ResampleQuality { Linear, Sinc };
+
 /// Per-voice playback options.
 struct PlayParams {
     float gain   = 1.0f;  ///< linear gain multiplier
@@ -189,6 +195,12 @@ public:
     /// harsh digital clipping when many voices sum hot.
     void setMasterLimiterEnabled(bool enabled);
     [[nodiscard]] bool masterLimiterEnabled() const noexcept;
+
+    /// Choose the resampling quality used for all voices (default Linear).
+    /// Sinc is band-limited and anti-aliased on pitch-up/downsampling; it costs
+    /// more CPU. Safe to change at any time.
+    void setResampleQuality(ResampleQuality quality);
+    [[nodiscard]] ResampleQuality resampleQuality() const noexcept;
 
     // ---- Events (any thread) ----
 

@@ -59,6 +59,78 @@ inline float lowpassCoeff(float cutoffHz, unsigned int fs) {
     return (a < 0.0f) ? 0.0f : (a > 1.0f ? 1.0f : a);
 }
 
+// --- Windowed-sinc resampling kernel ---------------------------------------
+// A Blackman-windowed sinc, precomputed once into a finely-sampled half-table
+// (the kernel is symmetric). Evaluated by linear table lookup on the audio
+// thread — no sin/cos in the callback. For decimation (step > 1) the kernel is
+// stretched by 1/step to band-limit below the new Nyquist, which is what makes
+// pitch-up / downsampling alias-free.
+constexpr int kSincHalf      = 16;                          // taps each side at unity rate
+constexpr int kSincDensity   = 512;                         // table samples per unit t
+constexpr int kSincTableSize = kSincHalf * kSincDensity + 2; // +guard for lerp
+
+struct SincTable {
+    std::array<float, kSincTableSize> h{};
+    SincTable() {
+        const double pi = 3.14159265358979323846;
+        for (int i = 0; i < kSincTableSize; ++i) {
+            const double t = static_cast<double>(i) / kSincDensity; // t >= 0
+            double s;
+            if (t < 1e-9)            s = 1.0;
+            else if (t >= kSincHalf) s = 0.0;
+            else {
+                const double x    = pi * t;
+                const double sinc = std::sin(x) / x;
+                const double w    = 0.42 + 0.5 * std::cos(pi * t / kSincHalf)
+                                         + 0.08 * std::cos(2.0 * pi * t / kSincHalf);
+                s = sinc * w;
+            }
+            h[static_cast<std::size_t>(i)] = static_cast<float>(s);
+        }
+    }
+    float at(double t) const {                 // symmetric: h(-t) == h(t)
+        const double a = (t < 0.0) ? -t : t;
+        const double idx = a * kSincDensity;
+        const int    i0  = static_cast<int>(idx);
+        if (i0 >= kSincTableSize - 1) return 0.0f;
+        const float f = static_cast<float>(idx - i0);
+        const float* hp = h.data();
+        return hp[i0] + (hp[i0 + 1] - hp[i0]) * f;
+    }
+};
+
+const SincTable& sincTable() {
+    static const SincTable table;   // built on first use (control thread)
+    return table;
+}
+
+// Band-limited windowed-sinc sample of `buf` at fractional source position `p`.
+// `step` is the source-frames-per-output-frame ratio (>1 = decimation).
+inline void sincSample(const AudioBuffer& buf, std::uint32_t srcCh, std::size_t frames,
+                       double p, double step, bool loop, float& outL, float& outR) {
+    const SincTable& tab = sincTable();
+    const double cutoff  = (step > 1.0) ? (1.0 / step) : 1.0;   // anti-alias on decimation
+    const double support = static_cast<double>(kSincHalf) / cutoff;
+    const long   n       = static_cast<long>(frames);
+    const long   kmin    = static_cast<long>(std::ceil(p - support));
+    const long   kmax    = static_cast<long>(std::floor(p + support));
+
+    float accL = 0.0f, accR = 0.0f, wsum = 0.0f;
+    for (long k = kmin; k <= kmax; ++k) {
+        const float w = tab.at((static_cast<double>(k) - p) * cutoff) * static_cast<float>(cutoff);
+        long idx = k;
+        if (loop) { idx %= n; if (idx < 0) idx += n; }
+        else if (idx < 0 || idx >= n) { continue; }            // zero-pad outside
+        const float* s = &buf.samples[static_cast<std::size_t>(idx) * srcCh];
+        accL += s[0] * w;
+        accR += ((srcCh == 1) ? s[0] : s[1]) * w;
+        wsum += w;
+    }
+    if (wsum > 1e-6f) { accL /= wsum; accR /= wsum; }           // unity DC gain
+    outL = accL;
+    outR = accR;
+}
+
 constexpr float kSoftClipThreshold = 0.7f;
 
 /// Master-bus soft clipper: transparent below ±threshold, then a smooth knee
@@ -218,6 +290,7 @@ struct AudioEngine::Impl {
     std::array<Voice, kMaxVoices> voices{};
     Ramp master{1.0f, 1.0f, 0.0f, 0};             // audio thread only (smoothed)
     std::atomic<bool> limiterEnabled{true};       // master-bus soft clip
+    std::atomic<int>  resampleQuality{0};         // 0 = Linear, 1 = Sinc
 
     // Monotonic output-frame clock for sample-accurate scheduling. framePos is
     // the absolute frame index of the next block, advanced on the audio thread;
@@ -251,6 +324,7 @@ struct AudioEngine::Impl {
             busSoloShadow[i].store(false, std::memory_order_relaxed);
             busBlock[i].assign(kBusBlockPrealloc, 1.0f);  // preallocate (RT-safe steady state)
         }
+        (void)sincTable();   // build the resampling kernel now, off the audio thread
     }
 
     // Recompute each bus's audible factor (audio thread) after a mute/solo change.
@@ -409,6 +483,7 @@ struct AudioEngine::Impl {
 
         const unsigned int rate = sampleRate.load(std::memory_order_relaxed);
         const std::uint64_t blockStart = framePos;   // absolute frame index of out[0]
+        const bool useSinc = resampleQuality.load(std::memory_order_relaxed) != 0;
 
         // Precompute each bus's smoothed per-frame gain for this block. A single
         // pass advances each bus ramp exactly once per frame; voices on the bus
@@ -460,16 +535,20 @@ struct AudioEngine::Impl {
                     }
                 }
 
-                // Linear interpolation between source frames i0 and i1.
-                const std::size_t i0   = static_cast<std::size_t>(v.position);
-                const float       frac = static_cast<float>(v.position - static_cast<double>(i0));
-                std::size_t       i1   = i0 + 1;
-                if (i1 >= frames) i1 = v.loop ? 0 : i0;
-
-                const float* a = &buf.samples[i0 * srcCh];
-                const float* b = &buf.samples[i1 * srcCh];
-                float        l = a[0] + (b[0] - a[0]) * frac;                  // mono / left
-                float        r = (srcCh == 1) ? l : (a[1] + (b[1] - a[1]) * frac);
+                // Interpolate the source at the fractional position.
+                float l, r;
+                if (useSinc) {
+                    sincSample(buf, srcCh, frames, v.position, step, v.loop, l, r);
+                } else {
+                    const std::size_t i0   = static_cast<std::size_t>(v.position);
+                    const float       frac = static_cast<float>(v.position - static_cast<double>(i0));
+                    std::size_t       i1   = i0 + 1;
+                    if (i1 >= frames) i1 = v.loop ? 0 : i0;
+                    const float* a = &buf.samples[i0 * srcCh];
+                    const float* b = &buf.samples[i1 * srcCh];
+                    l = a[0] + (b[0] - a[0]) * frac;                  // mono / left
+                    r = (srcCh == 1) ? l : (a[1] + (b[1] - a[1]) * frac);
+                }
 
                 if (v.lpCoeff < 1.0f) {           // one-pole low-pass (muffling)
                     v.lpStateL += v.lpCoeff * (l - v.lpStateL); l = v.lpStateL;
@@ -834,6 +913,16 @@ void AudioEngine::setMasterLimiterEnabled(bool enabled) {
 
 bool AudioEngine::masterLimiterEnabled() const noexcept {
     return impl_->limiterEnabled.load(std::memory_order_relaxed);
+}
+
+void AudioEngine::setResampleQuality(ResampleQuality quality) {
+    impl_->resampleQuality.store(static_cast<int>(quality), std::memory_order_relaxed);
+}
+
+ResampleQuality AudioEngine::resampleQuality() const noexcept {
+    return impl_->resampleQuality.load(std::memory_order_relaxed) != 0
+               ? ResampleQuality::Sinc
+               : ResampleQuality::Linear;
 }
 
 bool AudioEngine::pollEvent(Event& out) {

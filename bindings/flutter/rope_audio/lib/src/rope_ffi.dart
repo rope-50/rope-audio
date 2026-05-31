@@ -180,6 +180,12 @@ class RopeBindings {
                 Pointer<RopeEngineHandle>, int)>('rope_set_master_limiter'),
         getMasterLimiter = dl.lookupFunction<_I32EngineC, _I32EngineD>(
             'rope_get_master_limiter'),
+        setResampleQuality = dl.lookupFunction<
+            Void Function(Pointer<RopeEngineHandle>, Int32),
+            void Function(
+                Pointer<RopeEngineHandle>, int)>('rope_set_resample_quality'),
+        getResampleQuality = dl.lookupFunction<_I32EngineC, _I32EngineD>(
+            'rope_get_resample_quality'),
         engineSuspend = dl
             .lookupFunction<_I32EngineC, _I32EngineD>('rope_engine_suspend'),
         engineResume =
@@ -227,6 +233,8 @@ class RopeBindings {
   final int Function(Pointer<RopeEngineHandle>, int) getBusSoloed;
   final void Function(Pointer<RopeEngineHandle>, int) setMasterLimiter;
   final int Function(Pointer<RopeEngineHandle>) getMasterLimiter;
+  final void Function(Pointer<RopeEngineHandle>, int) setResampleQuality;
+  final int Function(Pointer<RopeEngineHandle>) getResampleQuality;
   final int Function(Pointer<RopeEngineHandle>) engineSuspend;
   final int Function(Pointer<RopeEngineHandle>) engineResume;
   final int Function(Pointer<RopeEngineHandle>, Pointer<RopeEventNative>)

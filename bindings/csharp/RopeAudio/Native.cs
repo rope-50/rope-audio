@@ -59,6 +59,12 @@ namespace Rope
         Ui = 2,
     }
 
+    public enum RopeResampleQuality
+    {
+        Linear = 0,
+        Sinc = 1,
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct RopeConfig
     {
@@ -145,6 +151,8 @@ namespace Rope
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern int rope_get_bus_soloed(IntPtr engine, RopeBus bus);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern void rope_set_master_limiter(IntPtr engine, int enabled);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern int rope_get_master_limiter(IntPtr engine);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern void rope_set_resample_quality(IntPtr engine, RopeResampleQuality q);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResampleQuality rope_get_resample_quality(IntPtr engine);
 
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_engine_suspend(IntPtr engine);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_engine_resume(IntPtr engine);

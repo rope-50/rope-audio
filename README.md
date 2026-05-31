@@ -165,9 +165,9 @@ Done in v0.1:
 - [x] WAV / FLAC / MP3 / OGG decoding (format auto-detected from the data)
 - [x] Sample-accurate scheduling (start voices at an absolute frame on the sample clock)
 - [x] Per-voice low-pass filter (muffling for distance / occlusion / underwater)
+- [x] Windowed-sinc resampling (opt-in; band-limited, anti-aliased on pitch-up)
 
 Next:
-- [ ] Higher-quality resampling (windowed-sinc)
 - [ ] Mobile/desktop plugin glue beyond Windows (Android/iOS/macOS/Linux)
 - [ ] Device-changed / auto-reroute events
 ```

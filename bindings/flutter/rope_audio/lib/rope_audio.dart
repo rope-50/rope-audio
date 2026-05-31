@@ -18,6 +18,9 @@ enum RopeBackend { defaultBackend, miniaudio, rtaudio, rtaudioAsio }
 /// Category bus a voice routes through (mirrors `rope_bus`).
 enum RopeBus { sfx, music, ui }
 
+/// Resampling quality (mirrors `rope_resample_quality`).
+enum RopeResampleQuality { linear, sinc }
+
 /// Why a voice stopped (mirrors `rope_voice_end_reason`).
 enum RopeVoiceEndReason { natural, stopped, stolen }
 
@@ -230,6 +233,13 @@ class RopeEngine {
   set masterLimiterEnabled(bool enabled) =>
       _b.setMasterLimiter(_engine, enabled ? 1 : 0);
   bool get masterLimiterEnabled => _b.getMasterLimiter(_engine) != 0;
+
+  /// Resampling quality for all voices (default [RopeResampleQuality.linear]).
+  /// Sinc is band-limited / anti-aliased on pitch-up at a higher CPU cost.
+  set resampleQuality(RopeResampleQuality q) =>
+      _b.setResampleQuality(_engine, q.index);
+  RopeResampleQuality get resampleQuality =>
+      RopeResampleQuality.values[_b.getResampleQuality(_engine)];
 
   void suspend() => _b.engineSuspend(_engine);
   void resume() => _b.engineResume(_engine);

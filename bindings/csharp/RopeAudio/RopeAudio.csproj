@@ -13,7 +13,7 @@
     <AssemblyName>RopeAudio</AssemblyName>
     <RootNamespace>Rope</RootNamespace>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>0.8.0</Version>
+    <Version>0.9.0</Version>
     <Description>C# (P/Invoke) bindings for the rope-audioengine real-time audio engine. Usable from Unity and Godot .NET.</Description>
   </PropertyGroup>
 

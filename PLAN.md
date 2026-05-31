@@ -77,8 +77,9 @@ serves pure-GDScript users.
 
 ## 3. DSP / engine features (verifiable here via the Null backend + tests)
 
-- [ ] **Higher-quality resampling** (windowed-sinc) as an opt-in alternative to
-      the current linear interpolator; A/B test vs linear.
+- [x] **Higher-quality resampling** (windowed-sinc) — opt-in per engine;
+      precomputed Blackman-sinc kernel, kernel stretched by 1/step so pitch-up /
+      downsampling is band-limited (anti-aliased). Linear stays the default.
 - [x] **Sample-accurate scheduling** — start a voice at an absolute frame on a
       monotonic sample clock (`currentFrame()` + `PlayParams.startFrame` /
       `rope_play_scheduled`); voices begin at the exact mid-block frame.

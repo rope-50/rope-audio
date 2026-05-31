@@ -153,6 +153,14 @@ namespace Rope
             set => Native.rope_set_master_limiter(_engine, value ? 1 : 0);
         }
 
+        /// <summary>Resampling quality for all voices (default Linear). Sinc is
+        /// band-limited / anti-aliased on pitch-up at a higher CPU cost.</summary>
+        public RopeResampleQuality ResampleQuality
+        {
+            get => Native.rope_get_resample_quality(_engine);
+            set => Native.rope_set_resample_quality(_engine, value);
+        }
+
         public void Suspend() => Native.rope_engine_suspend(_engine);
         public void Resume() => Native.rope_engine_resume(_engine);
 

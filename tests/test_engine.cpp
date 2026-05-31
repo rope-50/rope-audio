@@ -507,6 +507,49 @@ TEST(Filter, LiveLowpassMuffles) {
     EXPECT_LT(energy(muffled), energy(open) * 0.3f);
 }
 
+TEST(Resampler, DefaultsToLinearAndToggles) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    EXPECT_EQ(e.resampleQuality(), ResampleQuality::Linear);
+    e.setResampleQuality(ResampleQuality::Sinc);
+    EXPECT_EQ(e.resampleQuality(), ResampleQuality::Sinc);
+}
+
+TEST(Resampler, SincPreservesLevelAtFractionalRate) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    e.setResampleQuality(ResampleQuality::Sinc);
+    auto s = loadConstMono(e, 0.5f, 100000);
+    e.play(s, PlayParams{.pan = -1.0f, .pitch = 1.7f});   // fractional rate -> sinc path
+    std::vector<float> out(1000 * 2, 0.0f);
+    e.renderOffline(out.data(), 1000);
+    EXPECT_NEAR(out[800 * 2], 0.5f, 0.01f);               // constant (DC) preserved
+}
+
+TEST(Resampler, SincAntiAliasesOnDownsampling) {
+    // Nyquist-frequency source. Played at pitch 2.0 (2x decimation) it folds to
+    // DC with linear interpolation, but a band-limited sinc rejects it.
+    std::vector<float> alt(8000);
+    for (std::size_t i = 0; i < alt.size(); ++i) alt[i] = (i % 2 == 0) ? 0.5f : -0.5f;
+    auto wav = test::makeWavPcm16(1, 48000, alt);
+
+    auto measure = [&](ResampleQuality q) {
+        AudioEngine e;
+        e.start(48000, 0, BackendType::Null);
+        e.setResampleQuality(q);
+        auto s = e.loadWavMemory(wav.data(), wav.size());
+        e.play(s, PlayParams{.pan = -1.0f, .pitch = 2.0f});
+        std::vector<float> out(1000 * 2, 0.0f);
+        e.renderOffline(out.data(), 1000);
+        return energy(out);
+    };
+
+    const float linE = measure(ResampleQuality::Linear);
+    const float sinE = measure(ResampleQuality::Sinc);
+    EXPECT_GT(linE, 0.0f);
+    EXPECT_LT(sinE, linE * 0.5f);   // sinc removes the aliased Nyquist energy
+}
+
 TEST(Buses, DefaultsToSfxAtUnityGain) {
     AudioEngine e;
     e.start(48000, 0, BackendType::Null);

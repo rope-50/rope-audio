@@ -317,6 +317,22 @@ int32_t rope_get_master_limiter(rope_engine_t e) {
     catch (...) { return 0; }
 }
 
+void rope_set_resample_quality(rope_engine_t e, rope_resample_quality q) {
+    if (!e) return;
+    try {
+        e->engine.setResampleQuality(q == ROPE_RESAMPLE_SINC
+            ? rope::ResampleQuality::Sinc : rope::ResampleQuality::Linear);
+    } catch (...) {}
+}
+
+rope_resample_quality rope_get_resample_quality(rope_engine_t e) {
+    if (!e) return ROPE_RESAMPLE_LINEAR;
+    try {
+        return e->engine.resampleQuality() == rope::ResampleQuality::Sinc
+            ? ROPE_RESAMPLE_SINC : ROPE_RESAMPLE_LINEAR;
+    } catch (...) { return ROPE_RESAMPLE_LINEAR; }
+}
+
 rope_result rope_engine_suspend(rope_engine_t e) {
     if (!e) return ROPE_ERR_INVALID_ARGUMENT;
     try { e->engine.suspend(); return ROPE_OK; }

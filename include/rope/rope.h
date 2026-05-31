@@ -35,7 +35,7 @@ extern "C" {
 
 /* ---- Versioning ---------------------------------------------------------- */
 #define ROPE_ABI_VERSION_MAJOR 0u
-#define ROPE_ABI_VERSION_MINOR 8u
+#define ROPE_ABI_VERSION_MINOR 9u
 
 /* ---- Handles ------------------------------------------------------------- */
 typedef struct rope_engine* rope_engine_t; /* opaque; NULL = invalid */
@@ -92,6 +92,12 @@ typedef enum rope_bus {
     ROPE_BUS_UI = 2,
     ROPE_BUS_FORCE_U32 = 0x7fffffff
 } rope_bus;
+
+typedef enum rope_resample_quality {
+    ROPE_RESAMPLE_LINEAR = 0,         /* cheap 2-point (default) */
+    ROPE_RESAMPLE_SINC = 1,           /* band-limited windowed-sinc */
+    ROPE_RESAMPLE_FORCE_U32 = 0x7fffffff
+} rope_resample_quality;
 
 /* ---- POD structs (append into _reserved only) ---------------------------- */
 typedef struct rope_config {
@@ -181,6 +187,9 @@ ROPE_API int32_t     ROPE_CALL rope_get_bus_soloed(rope_engine_t, rope_bus);
 /* Master-bus soft-clip limiter (on by default; non-zero = enabled). */
 ROPE_API void        ROPE_CALL rope_set_master_limiter(rope_engine_t, int32_t enabled);
 ROPE_API int32_t     ROPE_CALL rope_get_master_limiter(rope_engine_t);
+/* Resampling quality for all voices (default ROPE_RESAMPLE_LINEAR). */
+ROPE_API void        ROPE_CALL rope_set_resample_quality(rope_engine_t, rope_resample_quality);
+ROPE_API rope_resample_quality ROPE_CALL rope_get_resample_quality(rope_engine_t);
 
 /* ---- Mobile lifecycle ---------------------------------------------------- */
 ROPE_API rope_result ROPE_CALL rope_engine_suspend(rope_engine_t);
