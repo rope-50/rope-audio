@@ -79,3 +79,35 @@ serves pure-GDScript users.
 2. **(2)** Godot GDExtension — completes the binding story (CI-verifiable build).
 3. **(1)** mobile/desktop plugin glue — on the macOS M4 (needs devices/toolchains).
 4. **(4)/(5)** packaging, releases, docs — once the surface is stable.
+
+---
+
+## 6. Minimal starter projects (independent repos)
+
+A small, copy-and-run example per platform/binding, each in its **own
+standalone repository** (so a dev can clone exactly one and have a working
+project). Each depends on a published rope release (pub.dev / NuGet / a tagged
+binary) — not on a checkout of this repo — and stays deliberately minimal:
+init engine → load one asset → play with pan/gain → drain events → clean shutdown.
+
+- [ ] **`rope-flutter-starter`** — minimal Flutter/Flame game: tap to play a
+      panned SFX over a looping music bed, master-volume slider, runs on desktop
+      + mobile. Depends on the `rope_audio` pub package.
+- [ ] **`rope-unity-starter`** — minimal Unity project: one scene, a
+      `MonoBehaviour` that plays positional SFX on click. Consumes the UPM/NuGet
+      package with prebuilt native libs under `Plugins/`.
+- [ ] **`rope-godot-csharp-starter`** — minimal Godot .NET project using the C#
+      bindings (Node polling events in `_Process`).
+- [ ] **`rope-godot-gdscript-starter`** — minimal Godot project using the
+      GDExtension (pure GDScript; depends on item 2).
+- [ ] **`rope-cpp-starter`** — minimal C++ consumer via `find_package(rope)` /
+      `FetchContent` (depends on item 4's CMake install/package config).
+- [ ] **`rope-c-starter`** — minimal C program linking the prebuilt shared lib +
+      `rope.h` (the lowest-level integration reference).
+
+Shared conventions for all starters:
+- [ ] One README with clone → install dep → run, in under five commands.
+- [ ] A tiny bundled test asset (or a script to generate one).
+- [ ] CI that builds the starter against the latest published rope release
+      (catches binding/packaging regressions from a consumer's point of view).
+- [ ] Linked from this repo's README as official examples.
