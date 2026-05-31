@@ -6,7 +6,7 @@
 # rope core sources directly here, miniaudio-only, into rope_audio.dll and tell
 # Flutter to bundle it next to the runner.
 cmake_minimum_required(VERSION 3.14)
-project(rope_audio_library LANGUAGES CXX)
+project(rope_audio_library LANGUAGES C CXX)  # C for stb_vorbis.c
 
 include(FetchContent)
 
@@ -46,7 +46,15 @@ FetchContent_Declare(miniaudio
   SOURCE_SUBDIR  do-not-configure)   # fetch the header only; skip its CMake
 FetchContent_MakeAvailable(miniaudio)
 
+FetchContent_Declare(stb
+  GIT_REPOSITORY https://github.com/nothings/stb.git
+  GIT_TAG        master
+  GIT_SHALLOW    TRUE)
+FetchContent_MakeAvailable(stb)
+
 # --- The plugin shared library (exports the rope_* C ABI) ---
+# stb_vorbis.c is compiled into the same target (same CRT) so OGG's malloc/free
+# pairing stays on one heap.
 add_library(rope_audio SHARED
   "${ROPE_ROOT}/src/AudioEngine.cpp"
   "${ROPE_ROOT}/src/AudioBackend.cpp"
@@ -54,13 +62,15 @@ add_library(rope_audio SHARED
   "${ROPE_ROOT}/src/rope_c.cpp"
   "${ROPE_ROOT}/src/backends/NullBackend.cpp"
   "${ROPE_ROOT}/src/backends/MiniaudioBackend.cpp"
+  "${stb_SOURCE_DIR}/stb_vorbis.c"
 )
 
 target_include_directories(rope_audio PRIVATE
   "${ROPE_ROOT}/include"
   "${ROPE_ROOT}/src"
   "${dr_libs_SOURCE_DIR}"
-  "${miniaudio_SOURCE_DIR}")
+  "${miniaudio_SOURCE_DIR}"
+  "${stb_SOURCE_DIR}")
 
 target_compile_features(rope_audio PRIVATE cxx_std_20)
 target_compile_definitions(rope_audio PRIVATE

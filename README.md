@@ -15,7 +15,8 @@ Cross-platform by design through a small **audio backend** abstraction:
 | **miniaudio** (default) | Windows, macOS, Linux, **Android, iOS** | WASAPI/CoreAudio/ALSA/AAudio…  |
 | **RtAudio**   | Windows, macOS, Linux                                  | Adds **ASIO** on Windows       |
 
-WAV decoding uses [dr_wav](https://github.com/mackron/dr_libs).
+Audio decoding (**WAV, FLAC, MP3, OGG/Vorbis**) uses
+[dr_libs](https://github.com/mackron/dr_libs) + [stb_vorbis](https://github.com/nothings/stb).
 
 > Status: **v0.1** — thread-safe C++ core (lock-free mixer, gain/pan, master
 > volume, poll events, file + in-memory WAV loading), a stable C ABI, and a
@@ -161,11 +162,11 @@ Done in v0.1:
 - [x] Per-voice fade in/out + gain/pan/master smoothing (anti-zipper)
 - [x] Unity / Godot **C# (P/Invoke) bindings** + idiomatic wrapper (headless smoke in CI)
 - [x] Category buses (SFX / Music / UI) with smoothed group volume
+- [x] WAV / FLAC / MP3 / OGG decoding (format auto-detected from the data)
 
 Next:
 - [ ] Higher-quality resampling (windowed-sinc)
 - [ ] Sample-accurate scheduling (start voices at an absolute frame time)
 - [ ] Mobile/desktop plugin glue beyond Windows (Android/iOS/macOS/Linux)
 - [ ] Device-changed / auto-reroute events
-- [ ] OGG/FLAC/MP3 decoding
 ```

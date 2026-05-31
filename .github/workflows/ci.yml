@@ -29,6 +29,19 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
+      - name: Generate codec fixtures (Linux)
+        # ffmpeg encodes a short tone to FLAC/MP3/OGG so the decode tests run for
+        # real on one platform; other OSes skip them (ROPE_FIXTURE_DIR unset).
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          mkdir -p fixtures
+          ffmpeg -y -f lavfi -i "sine=frequency=440:duration=0.5" -ac 1 -ar 48000 fixtures/tone.wav
+          ffmpeg -y -i fixtures/tone.wav fixtures/tone.flac
+          ffmpeg -y -i fixtures/tone.wav -c:a libmp3lame -b:a 128k fixtures/tone.mp3
+          ffmpeg -y -i fixtures/tone.wav -c:a libvorbis fixtures/tone.ogg
+          echo "ROPE_FIXTURE_DIR=$PWD/fixtures" >> "$GITHUB_ENV"
+
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 

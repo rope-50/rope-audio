@@ -1,9 +1,15 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "rope/AudioEngine.hpp"
+#include "rope/WavLoader.hpp"
 #include "wav_util.hpp"
 
 using namespace rope;
@@ -351,6 +357,53 @@ TEST(Fades, SetVoiceGainSmoothsInsteadOfJumping) {
     e.renderOffline(settle.data(), 512);
     EXPECT_NEAR(settle[500 * 2], 0.0f, 0.01f);          // now silent
 }
+
+TEST(Decode, DetectsContainerByMagic) {
+    auto wav = test::makeWavPcm16(1, 48000, std::vector<float>(16, 0.1f));
+    EXPECT_EQ(detectAudioFormat(wav.data(), wav.size()), AudioFormat::Wav);
+
+    const unsigned char flac[] = {'f', 'L', 'a', 'C', 0, 0, 0, 0};
+    EXPECT_EQ(detectAudioFormat(flac, sizeof flac), AudioFormat::Flac);
+    const unsigned char ogg[] = {'O', 'g', 'g', 'S', 0, 0, 0, 0};
+    EXPECT_EQ(detectAudioFormat(ogg, sizeof ogg), AudioFormat::Ogg);
+    const unsigned char id3[] = {'I', 'D', '3', 4, 0, 0, 0};
+    EXPECT_EQ(detectAudioFormat(id3, sizeof id3), AudioFormat::Mp3);
+    const unsigned char sync[] = {0xFF, 0xFB, 0x90, 0x00};        // MPEG frame sync
+    EXPECT_EQ(detectAudioFormat(sync, sizeof sync), AudioFormat::Mp3);
+    const unsigned char junk[] = {1, 2, 3, 4};
+    EXPECT_EQ(detectAudioFormat(junk, sizeof junk), AudioFormat::Unknown);
+    EXPECT_EQ(detectAudioFormat(nullptr, 0), AudioFormat::Unknown);
+}
+
+namespace {
+// Locate a codec fixture under ROPE_FIXTURE_DIR (generated in CI from a WAV).
+std::optional<std::filesystem::path> fixturePath(const char* name) {
+    const char* dir = std::getenv("ROPE_FIXTURE_DIR");
+    if (dir == nullptr || *dir == '\0') return std::nullopt;
+    std::filesystem::path p = std::filesystem::path(dir) / name;
+    std::error_code ec;
+    if (!std::filesystem::exists(p, ec)) return std::nullopt;
+    return p;
+}
+
+void decodeFixtureCheck(const char* name) {
+    auto p = fixturePath(name);
+    if (!p) GTEST_SKIP() << "fixture '" << name
+                         << "' absent (set ROPE_FIXTURE_DIR to enable)";
+    auto buf = decodeWav(*p);
+    ASSERT_TRUE(buf.has_value()) << "failed to decode " << name;
+    EXPECT_GE(buf->channels, 1u);
+    EXPECT_GT(buf->sampleRate, 0u);
+    ASSERT_FALSE(buf->samples.empty());
+    float e = 0.0f;
+    for (float x : buf->samples) e += std::abs(x);
+    EXPECT_GT(e, 0.0f);   // decoded real audio, not silence
+}
+} // namespace
+
+TEST(Decode, FlacFixture) { decodeFixtureCheck("tone.flac"); }
+TEST(Decode, Mp3Fixture)  { decodeFixtureCheck("tone.mp3"); }
+TEST(Decode, OggFixture)  { decodeFixtureCheck("tone.ogg"); }
 
 TEST(Buses, DefaultsToSfxAtUnityGain) {
     AudioEngine e;

@@ -20,6 +20,31 @@ FetchContent_MakeAvailable(dr_libs)
 add_library(dr_libs INTERFACE)
 target_include_directories(dr_libs INTERFACE ${dr_libs_SOURCE_DIR})
 
+# --- stb_vorbis: OGG/Vorbis decoder ----------------------------------------
+# dr_libs covers WAV/FLAC/MP3 but not Vorbis. stb_vorbis.c is compiled as its
+# own C static library (warnings silenced — it is old, very noisy C, and we keep
+# /W4 -Wall on our own code). WavLoader.cpp includes it header-only for the
+# prototypes; the PUBLIC include dir makes `#include "stb_vorbis.c"` resolve.
+FetchContent_Declare(
+    stb
+    GIT_REPOSITORY https://github.com/nothings/stb.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(stb)
+
+add_library(stb_vorbis STATIC ${stb_SOURCE_DIR}/stb_vorbis.c)
+target_include_directories(stb_vorbis PUBLIC ${stb_SOURCE_DIR})
+# PIC so it can be linked into the shared/FFI library on Linux.
+set_target_properties(stb_vorbis PROPERTIES POSITION_INDEPENDENT_CODE ON)
+# Silence its (very noisy) warnings; the CRT is pinned to /MD project-wide in the
+# top-level CMakeLists (CMAKE_MSVC_RUNTIME_LIBRARY) so it shares one heap.
+if(MSVC)
+    target_compile_options(stb_vorbis PRIVATE /w)
+else()
+    target_compile_options(stb_vorbis PRIVATE -w)
+endif()
+
 # --- miniaudio: cross-platform audio device backend (DEFAULT) --------------
 # Covers Windows (WASAPI/DSound), macOS + iOS (CoreAudio), Linux (ALSA/Pulse/
 # JACK) and Android (AAudio/OpenSL ES) — i.e. every target platform. Single

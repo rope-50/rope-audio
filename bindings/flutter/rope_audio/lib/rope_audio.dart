@@ -121,8 +121,8 @@ class RopeEngine {
   int get sampleRate => _b.engineSampleRate(_engine);
   int get channels => _b.engineChannels(_engine);
 
-  /// Decode a WAV file into the sound bank. Returns a sound handle or
-  /// [kInvalidSound] on failure.
+  /// Decode an audio file (WAV/FLAC/MP3/OGG, auto-detected) into the sound bank.
+  /// Returns a sound handle or [kInvalidSound] on failure.
   int loadFile(String path) {
     final p = path.toNativeUtf8();
     try {
@@ -132,7 +132,8 @@ class RopeEngine {
     }
   }
 
-  /// Decode a WAV from an in-memory buffer (e.g. a bundled asset's bytes).
+  /// Decode audio from an in-memory buffer (e.g. a bundled asset's bytes).
+  /// WAV/FLAC/MP3/OGG are auto-detected from the data.
   int loadBytes(Uint8List bytes) {
     if (bytes.isEmpty) return kInvalidSound;
     final ptr = calloc<Uint8>(bytes.length);

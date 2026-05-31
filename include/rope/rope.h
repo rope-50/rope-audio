@@ -138,6 +138,9 @@ ROPE_API uint32_t      ROPE_CALL rope_engine_sample_rate(rope_engine_t);
 ROPE_API uint32_t      ROPE_CALL rope_engine_channels(rope_engine_t);
 
 /* ---- Assets -------------------------------------------------------------- */
+/* Decode an audio asset into the sound bank. The container is detected from the
+ * data (not the extension): WAV, FLAC, OGG/Vorbis and MP3 are supported. The
+ * `_wav` names are kept for ABI stability. Returns ROPE_INVALID_SOUND on failure. */
 ROPE_API rope_sound  ROPE_CALL rope_load_wav_file(rope_engine_t, const char* utf8_path);
 ROPE_API rope_sound  ROPE_CALL rope_load_wav_memory(rope_engine_t, const void* data, size_t size);
 ROPE_API rope_result ROPE_CALL rope_unload_sound(rope_engine_t, rope_sound);

@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
+# Honor the MSVC_RUNTIME_LIBRARY abstraction (must be set before project()).
+cmake_policy(SET CMP0091 NEW)
+
 project(rope_audioengine
     VERSION 0.1.0
     DESCRIPTION "Modern C++ real-time audio engine for games and DAWs"
@@ -16,6 +19,13 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# Use the dynamic CRT (/MD) for every target — including fetched static libs like
+# stb_vorbis — so the whole module shares one CRT heap (avoids LNK4098 and any
+# cross-CRT allocation hazard).
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
 
 # Predictable output location for binaries.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -78,7 +88,8 @@ function(rope_configure_target tgt)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/src)      # for "backends/Backends.hpp"
     target_compile_features(${tgt} PUBLIC cxx_std_20)
-    target_link_libraries(${tgt} PRIVATE dr_libs) # WAV decoding (always on)
+    target_link_libraries(${tgt} PRIVATE dr_libs)    # WAV/FLAC/MP3 decoding
+    target_link_libraries(${tgt} PRIVATE stb_vorbis) # OGG/Vorbis decoding
     # Backends (each guarded by its own compile definition; the .cpp files
     # compile to nothing when their macro is undefined).
     if(ROPE_AUDIO_BACKEND_MINIAUDIO)

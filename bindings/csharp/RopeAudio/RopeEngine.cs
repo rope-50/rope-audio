@@ -54,11 +54,11 @@ namespace Rope
         public uint SampleRate => Native.rope_engine_sample_rate(_engine);
         public uint Channels => Native.rope_engine_channels(_engine);
 
-        /// <summary>Decode a WAV file into the sound bank.</summary>
+        /// <summary>Decode an audio file (WAV/FLAC/MP3/OGG, auto-detected) into the sound bank.</summary>
         /// <returns>A sound handle, or <see cref="RopeHandle.InvalidSound"/> on failure.</returns>
         public uint LoadWavFile(string path) => Native.rope_load_wav_file(_engine, path);
 
-        /// <summary>Decode a WAV from an in-memory buffer (e.g. a packed asset's bytes).</summary>
+        /// <summary>Decode audio from an in-memory buffer (WAV/FLAC/MP3/OGG, auto-detected).</summary>
         public uint LoadWavBytes(byte[] data)
         {
             if (data == null || data.Length == 0) return RopeHandle.InvalidSound;
