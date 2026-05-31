@@ -6,7 +6,7 @@ cmake_policy(SET CMP0091 NEW)
 project(rope_audioengine
     VERSION 0.1.0
     DESCRIPTION "Modern C++ real-time audio engine for games and DAWs"
-    LANGUAGES CXX)
+    LANGUAGES C CXX)  # C for stb_vorbis.c (OGG decoding)
 
 # ---------------------------------------------------------------------------
 # Project-wide settings
