@@ -35,7 +35,7 @@ extern "C" {
 
 /* ---- Versioning ---------------------------------------------------------- */
 #define ROPE_ABI_VERSION_MAJOR 0u
-#define ROPE_ABI_VERSION_MINOR 1u
+#define ROPE_ABI_VERSION_MINOR 2u
 
 /* ---- Handles ------------------------------------------------------------- */
 typedef struct rope_engine* rope_engine_t; /* opaque; NULL = invalid */
@@ -99,7 +99,8 @@ typedef struct rope_play_params {
     float    gain;        /* linear, default 1.0 */
     float    pan;         /* -1 = left, 0 = center, +1 = right */
     int32_t  loop;        /* 0 = one-shot, non-zero = loop */
-    uint32_t _reserved[4];/* future: pitch, bus_id, start_offset, fade... */
+    float    pitch;       /* speed/pitch ratio, default 1.0 (<=0 is treated as 1.0) */
+    uint32_t _reserved[3];/* future: bus_id, start_offset, fade... */
 } rope_play_params;
 
 typedef struct rope_event {
@@ -140,6 +141,7 @@ ROPE_API rope_result ROPE_CALL rope_stop_all(rope_engine_t);
 /* ---- Live mix control ---------------------------------------------------- */
 ROPE_API rope_result ROPE_CALL rope_set_voice_gain(rope_engine_t, rope_voice, float gain);
 ROPE_API rope_result ROPE_CALL rope_set_voice_pan(rope_engine_t, rope_voice, float pan);
+ROPE_API rope_result ROPE_CALL rope_set_voice_pitch(rope_engine_t, rope_voice, float pitch);
 ROPE_API rope_result ROPE_CALL rope_set_master_volume(rope_engine_t, float gain);
 ROPE_API float       ROPE_CALL rope_get_master_volume(rope_engine_t);
 

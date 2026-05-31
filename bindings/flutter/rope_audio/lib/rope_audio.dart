@@ -145,12 +145,18 @@ class RopeEngine {
   bool unloadSound(int sound) => _b.unloadSound(_engine, sound) == 0;
 
   /// Start a voice. Returns a voice handle or [kInvalidVoice].
-  int play(int sound, {double gain = 1.0, double pan = 0.0, bool loop = false}) {
+  /// [pitch] is a speed/pitch ratio (1 = original, 2 = +1 octave, 0.5 = -1).
+  int play(int sound,
+      {double gain = 1.0,
+      double pan = 0.0,
+      bool loop = false,
+      double pitch = 1.0}) {
     final pp = calloc<RopePlayParamsNative>();
     try {
       pp.ref.gain = gain;
       pp.ref.pan = pan;
       pp.ref.loop = loop ? 1 : 0;
+      pp.ref.pitch = pitch;
       return _b.play(_engine, sound, pp);
     } finally {
       calloc.free(pp);
@@ -164,6 +170,8 @@ class RopeEngine {
       _b.setVoiceGain(_engine, voice, gain);
   void setVoicePan(int voice, double pan) =>
       _b.setVoicePan(_engine, voice, pan);
+  void setVoicePitch(int voice, double pitch) =>
+      _b.setVoicePitch(_engine, voice, pitch);
 
   set masterVolume(double gain) => _b.setMasterVolume(_engine, gain);
   double get masterVolume => _b.getMasterVolume(_engine);

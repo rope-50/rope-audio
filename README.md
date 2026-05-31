@@ -153,11 +153,11 @@ Done in v0.1:
 - [x] Suspend/resume hooks for mobile lifecycle
 - [x] Stable C ABI + Flutter FFI plugin + Flame example (Windows-verified)
 - [x] Headless offline rendering (Null backend) + GoogleTest suite + CI
+- [x] Per-voice resampling (any source rate → device rate) + pitch control
 
 Next:
-- [ ] Sample-rate conversion (resample sources to the device rate)
 - [ ] Master limiter / soft-clip on the mix bus
-- [ ] Per-voice pitch and fade in/out; parameter smoothing (anti-zipper)
+- [ ] Per-voice fades + parameter smoothing (anti-zipper); higher-quality resampler
 - [ ] Sample-accurate scheduling (start voices at an absolute frame time)
 - [ ] Category buses (SFX/Music/UI) with group volume
 - [ ] Mobile/desktop plugin glue beyond Windows (Android/iOS/macOS/Linux)

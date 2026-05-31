@@ -21,9 +21,10 @@ inline constexpr VoiceHandle kInvalidVoice = 0;
 
 /// Per-voice playback options.
 struct PlayParams {
-    float gain = 1.0f;   ///< linear gain multiplier
-    float pan  = 0.0f;   ///< -1 = full left, 0 = center, +1 = full right
-    bool  loop = false;  ///< restart from the top when the end is reached
+    float gain  = 1.0f;  ///< linear gain multiplier
+    float pan   = 0.0f;  ///< -1 = full left, 0 = center, +1 = full right
+    bool  loop  = false; ///< restart from the top when the end is reached
+    float pitch = 1.0f;  ///< speed/pitch ratio (1 = original, 2 = +1 octave, 0.5 = -1 octave)
 };
 
 /// Reason a voice stopped (carried by Event::reason).
@@ -124,6 +125,10 @@ public:
     /// Change a playing voice's pan in [-1, 1] (no-op if it already finished).
     /// @return false if the command queue was full.
     bool setVoicePan(VoiceHandle voice, float pan);
+
+    /// Change a playing voice's pitch/speed ratio (no-op if it already finished).
+    /// @return false if the command queue was full.
+    bool setVoicePitch(VoiceHandle voice, float pitch);
 
     /// Set the master output gain applied to the whole mix.
     /// @return false if the command queue was full.

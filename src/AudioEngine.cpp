@@ -32,8 +32,20 @@ inline void computePan(float pan, float& panL, float& panR) {
     panR = std::sin(theta);
 }
 
+constexpr float kMinPitch = 0.0625f;  // 4 octaves down
+constexpr float kMaxPitch = 16.0f;    // 4 octaves up
+
+/// Clamp a pitch ratio to a sane range. 0 / NaN / negative (e.g. a zero-init
+/// struct coming across FFI) collapse to the neutral 1.0.
+inline float clampPitch(float p) {
+    if (!(p > 0.0f)) return 1.0f;
+    if (p < kMinPitch) return kMinPitch;
+    if (p > kMaxPitch) return kMaxPitch;
+    return p;
+}
+
 // --- Control -> audio thread messages --------------------------------------
-enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetMaster };
+enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetPitch, SetMaster };
 
 struct Command {
     CommandType        type{};
@@ -42,6 +54,7 @@ struct Command {
     float              gain   = 1.0f;             // Play / SetGain / SetMaster
     float              panL   = kCenterPanGain;   // Play / SetPan (precomputed)
     float              panR   = kCenterPanGain;
+    float              pitch  = 1.0f;             // Play / SetPitch
     bool               loop   = false;
 };
 
@@ -90,10 +103,11 @@ private:
 /// A single playing instance. Owned and mutated exclusively by the audio thread.
 struct Voice {
     const AudioBuffer* buffer   = nullptr;
-    std::size_t        position = 0;     // next frame to read
+    double             position = 0.0;   // fractional source frame index (for resampling)
     float              gain     = 1.0f;
     float              panL     = kCenterPanGain;
     float              panR     = kCenterPanGain;
+    float              pitch    = 1.0f;
     bool               loop     = false;
     bool               active   = false;
     VoiceHandle        id       = kInvalidVoice;
@@ -161,10 +175,11 @@ struct AudioEngine::Impl {
                     break;
                 }
                 slot->buffer   = cmd.buffer;
-                slot->position = 0;
+                slot->position = 0.0;
                 slot->gain     = cmd.gain;
                 slot->panL     = cmd.panL;   // precomputed on the control thread
                 slot->panR     = cmd.panR;
+                slot->pitch    = cmd.pitch;
                 slot->loop     = cmd.loop;
                 slot->id       = cmd.voice;
                 slot->active   = true;
@@ -201,6 +216,11 @@ struct AudioEngine::Impl {
                     }
                 }
                 break;
+            case CommandType::SetPitch:
+                for (Voice& v : voices) {
+                    if (v.active && v.id == cmd.voice) { v.pitch = cmd.pitch; break; }
+                }
+                break;
             case CommandType::SetMaster:
                 master = cmd.gain;
                 break;
@@ -212,17 +232,28 @@ struct AudioEngine::Impl {
         const unsigned int outCh = channels.load(std::memory_order_relaxed);
         std::memset(out, 0, sizeof(float) * nFrames * outCh);
 
+        const unsigned int rate = sampleRate.load(std::memory_order_relaxed);
+
         for (Voice& v : voices) {
             if (!v.active || v.buffer == nullptr) continue;
 
             const AudioBuffer&  buf    = *v.buffer;
             const std::size_t   frames = buf.frameCount();
+            if (frames == 0) { v.active = false; continue; }
             const std::uint32_t srcCh  = buf.channels;
 
+            // Source frames advanced per output frame: resample to the device
+            // rate and apply pitch. step == 1.0 when the rates match and pitch
+            // is 1.0, so matched-rate audio is read sample-for-sample.
+            const double denom = rate ? static_cast<double>(rate)
+                                      : static_cast<double>(buf.sampleRate);
+            const double step  = (static_cast<double>(buf.sampleRate) / denom) * v.pitch;
+
             for (unsigned int f = 0; f < nFrames; ++f) {
-                if (v.position >= frames) {
+                if (v.position >= static_cast<double>(frames)) {
                     if (v.loop) {
-                        v.position = 0;
+                        do { v.position -= static_cast<double>(frames); }
+                        while (v.position >= static_cast<double>(frames));
                     } else {
                         v.active = false;
                         pushEvent({EngineEvent::Kind::VoiceFinished, v.id,
@@ -230,9 +261,17 @@ struct AudioEngine::Impl {
                         break;
                     }
                 }
-                const float* src = &buf.samples[v.position * srcCh];
-                const float l = src[0];
-                const float r = (srcCh == 1) ? src[0] : src[1];
+
+                // Linear interpolation between source frames i0 and i1.
+                const std::size_t i0   = static_cast<std::size_t>(v.position);
+                const float       frac = static_cast<float>(v.position - static_cast<double>(i0));
+                std::size_t       i1   = i0 + 1;
+                if (i1 >= frames) i1 = v.loop ? 0 : i0;
+
+                const float* a = &buf.samples[i0 * srcCh];
+                const float* b = &buf.samples[i1 * srcCh];
+                const float  l = a[0] + (b[0] - a[0]) * frac;                  // mono / left
+                const float  r = (srcCh == 1) ? l : (a[1] + (b[1] - a[1]) * frac);
 
                 if (outCh == 1) {
                     out[f] += 0.5f * (l * v.panL + r * v.panR) * v.gain; // downmix
@@ -240,7 +279,7 @@ struct AudioEngine::Impl {
                     out[f * outCh + 0] += l * v.gain * v.panL;
                     out[f * outCh + 1] += r * v.gain * v.panR;
                 }
-                ++v.position;
+                v.position += step;
             }
         }
 
@@ -339,12 +378,7 @@ SoundHandle AudioEngine::loadWav(const std::filesystem::path& path) {
         std::fprintf(stderr, "[rope] failed to decode WAV: %s\n", path.string().c_str());
         return kInvalidSound;
     }
-    if (impl_->running.load() && decoded->sampleRate != impl_->sampleRate.load()) {
-        std::fprintf(stderr,
-            "[rope] warning: '%s' is %u Hz but the engine runs at %u Hz; "
-            "it will play back pitch-shifted (resampling not implemented yet)\n",
-            path.string().c_str(), decoded->sampleRate, impl_->sampleRate.load());
-    }
+    // Any sample rate is fine: the mixer resamples each voice to the device rate.
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
     impl_->sounds.push_back(std::make_unique<AudioBuffer>(std::move(*decoded)));
     return static_cast<SoundHandle>(impl_->sounds.size() - 1);
@@ -356,12 +390,7 @@ SoundHandle AudioEngine::loadWavMemory(const void* data, std::size_t size) {
         std::fprintf(stderr, "[rope] failed to decode WAV from memory (%zu bytes)\n", size);
         return kInvalidSound;
     }
-    if (impl_->running.load() && decoded->sampleRate != impl_->sampleRate.load()) {
-        std::fprintf(stderr,
-            "[rope] warning: in-memory WAV is %u Hz but the engine runs at %u Hz; "
-            "it will play back pitch-shifted (resampling not implemented yet)\n",
-            decoded->sampleRate, impl_->sampleRate.load());
-    }
+    // Any sample rate is fine: the mixer resamples each voice to the device rate.
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
     impl_->sounds.push_back(std::make_unique<AudioBuffer>(std::move(*decoded)));
     return static_cast<SoundHandle>(impl_->sounds.size() - 1);
@@ -390,6 +419,7 @@ VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
     cmd.voice  = id;
     cmd.gain   = params.gain;
     computePan(params.pan, cmd.panL, cmd.panR);   // off the audio thread
+    cmd.pitch  = clampPitch(params.pitch);
     cmd.loop   = params.loop;
 
     if (!impl_->pushCommand(cmd)) {
@@ -429,6 +459,15 @@ bool AudioEngine::setVoicePan(VoiceHandle voice, float pan) {
     cmd.type  = CommandType::SetPan;
     cmd.voice = voice;
     computePan(pan, cmd.panL, cmd.panR);          // off the audio thread
+    return impl_->pushCommand(cmd);
+}
+
+bool AudioEngine::setVoicePitch(VoiceHandle voice, float pitch) {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    Command cmd;
+    cmd.type  = CommandType::SetPitch;
+    cmd.voice = voice;
+    cmd.pitch = clampPitch(pitch);
     return impl_->pushCommand(cmd);
 }
 

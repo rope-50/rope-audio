@@ -83,9 +83,10 @@ void rope_config_default(rope_config* out) {
 void rope_play_params_default(rope_play_params* out) {
     if (!out) return;
     std::memset(out, 0, sizeof(*out));
-    out->gain = 1.0f;
-    out->pan  = 0.0f;
-    out->loop = 0;
+    out->gain  = 1.0f;
+    out->pan   = 0.0f;
+    out->loop  = 0;
+    out->pitch = 1.0f;
 }
 
 rope_engine_t rope_engine_create(void) {
@@ -166,9 +167,10 @@ rope_voice rope_play(rope_engine_t e, rope_sound s, const rope_play_params* p) {
         rope::PlayParams params;
         if (p) {
             if (!isFiniteF(p->gain) || !isFiniteF(p->pan)) return ROPE_INVALID_VOICE;
-            params.gain = p->gain;
-            params.pan  = p->pan;
-            params.loop = p->loop != 0;
+            params.gain  = p->gain;
+            params.pan   = p->pan;
+            params.loop  = p->loop != 0;
+            params.pitch = (p->pitch > 0.0f) ? p->pitch : 1.0f; // 0/NaN -> neutral
         }
         return e->engine.play(s, params);
     } catch (...) {
@@ -197,6 +199,12 @@ rope_result rope_set_voice_gain(rope_engine_t e, rope_voice v, float gain) {
 rope_result rope_set_voice_pan(rope_engine_t e, rope_voice v, float pan) {
     if (!e || !isFiniteF(pan)) return ROPE_ERR_INVALID_ARGUMENT;
     try { return e->engine.setVoicePan(v, pan) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
+    catch (...) { return ROPE_ERR_UNKNOWN; }
+}
+
+rope_result rope_set_voice_pitch(rope_engine_t e, rope_voice v, float pitch) {
+    if (!e) return ROPE_ERR_INVALID_ARGUMENT;   // pitch is clamped internally
+    try { return e->engine.setVoicePitch(v, pitch) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 

@@ -33,7 +33,9 @@ final class RopePlayParamsNative extends Struct {
   external double pan;
   @Int32()
   external int loop;
-  @Array(4)
+  @Float()
+  external double pitch;
+  @Array(3)
   external Array<Uint32> reserved;
 }
 
@@ -122,6 +124,10 @@ class RopeBindings {
             Int32 Function(Pointer<RopeEngineHandle>, Uint64, Float),
             int Function(Pointer<RopeEngineHandle>, int,
                 double)>('rope_set_voice_pan'),
+        setVoicePitch = dl.lookupFunction<
+            Int32 Function(Pointer<RopeEngineHandle>, Uint64, Float),
+            int Function(Pointer<RopeEngineHandle>, int,
+                double)>('rope_set_voice_pitch'),
         setMasterVolume = dl.lookupFunction<
             Int32 Function(Pointer<RopeEngineHandle>, Float),
             int Function(
@@ -159,6 +165,7 @@ class RopeBindings {
   final int Function(Pointer<RopeEngineHandle>) stopAll;
   final int Function(Pointer<RopeEngineHandle>, int, double) setVoiceGain;
   final int Function(Pointer<RopeEngineHandle>, int, double) setVoicePan;
+  final int Function(Pointer<RopeEngineHandle>, int, double) setVoicePitch;
   final int Function(Pointer<RopeEngineHandle>, double) setMasterVolume;
   final double Function(Pointer<RopeEngineHandle>) getMasterVolume;
   final int Function(Pointer<RopeEngineHandle>) engineSuspend;

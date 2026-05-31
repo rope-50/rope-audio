@@ -23,6 +23,22 @@ float energy(const std::vector<float>& v) {
     return sum;
 }
 
+// Render `chunk`-frame blocks until voice `v` reports VoiceFinished; returns the
+// total output frames rendered, or -1 if it never finished within maxChunks.
+int renderUntilFinished(AudioEngine& e, VoiceHandle v, int chunk, int maxChunks) {
+    std::vector<float> out(static_cast<std::size_t>(chunk) * 2, 0.0f);
+    int rendered = 0;
+    for (int i = 0; i < maxChunks; ++i) {
+        e.renderOffline(out.data(), static_cast<unsigned int>(chunk));
+        rendered += chunk;
+        Event ev;
+        while (e.pollEvent(ev)) {
+            if (ev.type == EventType::VoiceFinished && ev.voice == v) return rendered;
+        }
+    }
+    return -1;
+}
+
 } // namespace
 
 TEST(Engine, StartsWithNullBackend) {
@@ -164,4 +180,42 @@ TEST(Engine, UnloadBlocksNewPlays) {
     EXPECT_TRUE(e.unloadSound(s));
     EXPECT_EQ(e.play(s), kInvalidVoice);   // can't play a retired sound
     EXPECT_FALSE(e.unloadSound(s));        // already retired
+}
+
+TEST(Engine, ResamplesLowerRateToDeviceRate) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);                 // device 48 kHz
+    std::vector<float> s(100, 0.5f);
+    auto wav = test::makeWavPcm16(1, 24000, s);           // 100 frames at 24 kHz
+    auto v = e.play(e.loadWavMemory(wav.data(), wav.size()));
+    // A 24 kHz / 100-frame sound lasts ~200 output frames at 48 kHz.
+    int rendered = renderUntilFinished(e, v, 16, 64);
+    ASSERT_GT(rendered, 0);
+    EXPECT_NEAR(rendered, 200, 24);
+}
+
+TEST(Engine, PitchUpShortensPlayback) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    std::vector<float> s(200, 0.5f);
+    auto wav = test::makeWavPcm16(1, 48000, s);           // 200 frames at device rate
+    auto v = e.play(e.loadWavMemory(wav.data(), wav.size()),
+                    PlayParams{.pitch = 2.0f});
+    // pitch 2.0 consumes 2 source frames per output -> finishes in ~100 frames.
+    int rendered = renderUntilFinished(e, v, 16, 64);
+    ASSERT_GT(rendered, 0);
+    EXPECT_NEAR(rendered, 100, 24);
+}
+
+TEST(Engine, ConstantSoundUnchangedByResampling) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    std::vector<float> s(10000, 0.5f);
+    auto wav = test::makeWavPcm16(1, 32000, s);           // odd ratio 32k -> 48k
+    e.play(e.loadWavMemory(wav.data(), wav.size()), PlayParams{.pan = 0.0f});
+    std::vector<float> out(64 * 2, 0.0f);
+    e.renderOffline(out.data(), 64);
+    // Interpolating between equal samples yields the same value (center pan).
+    EXPECT_NEAR(out[0], 0.5f * 0.70710678f, 0.02f);
+    EXPECT_NEAR(out[1], 0.5f * 0.70710678f, 0.02f);
 }
