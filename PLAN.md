@@ -59,6 +59,9 @@ serves pure-GDScript users.
       a `FetchContent`-friendly entry for C++ consumers.
 - [ ] Semantic-versioned ABI policy doc (when MAJOR/MINOR bump; the
       `rope_abi_version()` contract).
+- [ ] **Standalone `*-starter` template repos** (post-publish): mirror the key
+      `examples/` into independent "Use this template" repos that depend on the
+      published package — see item 6.
 
 ## 5. Quality, docs & polish
 
@@ -82,32 +85,36 @@ serves pure-GDScript users.
 
 ---
 
-## 6. Minimal starter projects (independent repos)
+## 6. Minimal example projects (in-repo, `examples/`)
 
-A small, copy-and-run example per platform/binding, each in its **own
-standalone repository** (so a dev can clone exactly one and have a working
-project). Each depends on a published rope release (pub.dev / NuGet / a tagged
-binary) — not on a checkout of this repo — and stays deliberately minimal:
+A small, copy-and-run example per platform/binding, all kept **in this repo**
+under `examples/<platform>/`. They build against the local checkout and are
+compiled by CI, so they stay in lockstep with the core and the ABI (a binding
+change updates its example in the same commit). Each stays deliberately minimal:
 init engine → load one asset → play with pan/gain → drain events → clean shutdown.
 
-- [ ] **`rope-flutter-starter`** — minimal Flutter/Flame game: tap to play a
-      panned SFX over a looping music bed, master-volume slider, runs on desktop
-      + mobile. Depends on the `rope_audio` pub package.
-- [ ] **`rope-unity-starter`** — minimal Unity project: one scene, a
-      `MonoBehaviour` that plays positional SFX on click. Consumes the UPM/NuGet
-      package with prebuilt native libs under `Plugins/`.
-- [ ] **`rope-godot-csharp-starter`** — minimal Godot .NET project using the C#
+- [ ] **`examples/flutter/`** — minimal Flutter/Flame game: tap to play a panned
+      SFX over a looping music bed + master-volume slider. (The plugin already
+      ships a Flame example; promote/trim it here as the canonical one.)
+- [ ] **`examples/unity/`** — minimal Unity project: one scene, a `MonoBehaviour`
+      that plays positional SFX on click, native lib under `Plugins/`.
+- [ ] **`examples/godot-csharp/`** — minimal Godot .NET project using the C#
       bindings (Node polling events in `_Process`).
-- [ ] **`rope-godot-gdscript-starter`** — minimal Godot project using the
+- [ ] **`examples/godot-gdscript/`** — minimal Godot project using the
       GDExtension (pure GDScript; depends on item 2).
-- [ ] **`rope-cpp-starter`** — minimal C++ consumer via `find_package(rope)` /
-      `FetchContent` (depends on item 4's CMake install/package config).
-- [ ] **`rope-c-starter`** — minimal C program linking the prebuilt shared lib +
-      `rope.h` (the lowest-level integration reference).
+- [ ] **`examples/cpp/`** — minimal C++ consumer (`play_wav` already covers this;
+      keep a stripped "hello voice" variant).
+- [ ] **`examples/c/`** — minimal C program linking the shared lib + `rope.h`
+      (`rope_c_smoke.c` already covers this; keep as the lowest-level reference).
 
-Shared conventions for all starters:
-- [ ] One README with clone → install dep → run, in under five commands.
-- [ ] A tiny bundled test asset (or a script to generate one).
-- [ ] CI that builds the starter against the latest published rope release
-      (catches binding/packaging regressions from a consumer's point of view).
+Shared conventions:
+- [ ] Each has a README with build → run in a few commands.
+- [ ] Reuse the generated test assets (`tools/gen_test_wavs.ps1`).
+- [ ] CI builds each example against the local core (consumer-side smoke).
 - [ ] Linked from this repo's README as official examples.
+
+> **Standalone `*-starter` template repos are deferred to release time** — see
+> item 4. Once rope is published (pub.dev / NuGet / tagged binaries), mirror the
+> 1–2 most useful examples (Flutter, Unity) into independent
+> "Use this template" repos that depend on the *published* package, ideally
+> generated from `examples/` to avoid duplicate maintenance.
