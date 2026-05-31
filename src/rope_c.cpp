@@ -17,7 +17,7 @@ struct rope_engine {
 
 namespace {
 
-inline bool finitef(float v) { return std::isfinite(v); }
+inline bool isFiniteF(float v) { return std::isfinite(v); }
 
 rope::BackendType mapBackend(rope_backend b) {
     switch (b) {
@@ -165,7 +165,7 @@ rope_voice rope_play(rope_engine_t e, rope_sound s, const rope_play_params* p) {
     try {
         rope::PlayParams params;
         if (p) {
-            if (!finitef(p->gain) || !finitef(p->pan)) return ROPE_INVALID_VOICE;
+            if (!isFiniteF(p->gain) || !isFiniteF(p->pan)) return ROPE_INVALID_VOICE;
             params.gain = p->gain;
             params.pan  = p->pan;
             params.loop = p->loop != 0;
@@ -189,19 +189,19 @@ rope_result rope_stop_all(rope_engine_t e) {
 }
 
 rope_result rope_set_voice_gain(rope_engine_t e, rope_voice v, float gain) {
-    if (!e || !finitef(gain)) return ROPE_ERR_INVALID_ARGUMENT;
+    if (!e || !isFiniteF(gain)) return ROPE_ERR_INVALID_ARGUMENT;
     try { return e->engine.setVoiceGain(v, gain) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 
 rope_result rope_set_voice_pan(rope_engine_t e, rope_voice v, float pan) {
-    if (!e || !finitef(pan)) return ROPE_ERR_INVALID_ARGUMENT;
+    if (!e || !isFiniteF(pan)) return ROPE_ERR_INVALID_ARGUMENT;
     try { return e->engine.setVoicePan(v, pan) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 
 rope_result rope_set_master_volume(rope_engine_t e, float gain) {
-    if (!e || !finitef(gain)) return ROPE_ERR_INVALID_ARGUMENT;
+    if (!e || !isFiniteF(gain)) return ROPE_ERR_INVALID_ARGUMENT;
     try { return e->engine.setMasterVolume(gain) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
