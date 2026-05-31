@@ -49,6 +49,7 @@ enum class BackendType {
     Miniaudio,    ///< cross-platform: Windows / macOS / Linux / Android / iOS
     RtAudio,      ///< desktop; auto-selects the native API (WASAPI on Windows)
     RtAudioAsio,  ///< desktop Windows; forces ASIO (low-latency, pro/DAW)
+    Null,         ///< no device, no thread — for offline/headless rendering & tests
 };
 
 /// Create a backend. Returns nullptr if the requested backend was not compiled

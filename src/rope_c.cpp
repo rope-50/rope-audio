@@ -24,6 +24,7 @@ rope::BackendType mapBackend(rope_backend b) {
     case ROPE_BACKEND_MINIAUDIO:    return rope::BackendType::Miniaudio;
     case ROPE_BACKEND_RTAUDIO:      return rope::BackendType::RtAudio;
     case ROPE_BACKEND_RTAUDIO_ASIO: return rope::BackendType::RtAudioAsio;
+    case ROPE_BACKEND_NULL:         return rope::BackendType::Null;
     case ROPE_BACKEND_DEFAULT:
     default:                        return rope::BackendType::Default;
     }
@@ -177,31 +178,31 @@ rope_voice rope_play(rope_engine_t e, rope_sound s, const rope_play_params* p) {
 
 rope_result rope_stop_voice(rope_engine_t e, rope_voice v) {
     if (!e) return ROPE_ERR_INVALID_ARGUMENT;
-    try { e->engine.stopVoice(v); return ROPE_OK; }
+    try { return e->engine.stopVoice(v) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 
 rope_result rope_stop_all(rope_engine_t e) {
     if (!e) return ROPE_ERR_INVALID_ARGUMENT;
-    try { e->engine.stopAll(); return ROPE_OK; }
+    try { return e->engine.stopAll() ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 
 rope_result rope_set_voice_gain(rope_engine_t e, rope_voice v, float gain) {
     if (!e || !finitef(gain)) return ROPE_ERR_INVALID_ARGUMENT;
-    try { e->engine.setVoiceGain(v, gain); return ROPE_OK; }
+    try { return e->engine.setVoiceGain(v, gain) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 
 rope_result rope_set_voice_pan(rope_engine_t e, rope_voice v, float pan) {
     if (!e || !finitef(pan)) return ROPE_ERR_INVALID_ARGUMENT;
-    try { e->engine.setVoicePan(v, pan); return ROPE_OK; }
+    try { return e->engine.setVoicePan(v, pan) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 
 rope_result rope_set_master_volume(rope_engine_t e, float gain) {
     if (!e || !finitef(gain)) return ROPE_ERR_INVALID_ARGUMENT;
-    try { e->engine.setMasterVolume(gain); return ROPE_OK; }
+    try { return e->engine.setMasterVolume(gain) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 
@@ -237,6 +238,11 @@ int32_t rope_poll_event(rope_engine_t e, rope_event* out) {
     } catch (...) {
         return 0;
     }
+}
+
+void rope_render_offline(rope_engine_t e, float* out, uint32_t frames) {
+    if (!e || !out) return;
+    try { e->engine.renderOffline(out, frames); } catch (...) {}
 }
 
 } // extern "C"

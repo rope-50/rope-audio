@@ -63,6 +63,7 @@ set(ROPE_CORE_SOURCES
     src/AudioBackend.cpp
     src/WavLoader.cpp
     src/rope_c.cpp            # stable C ABI (include/rope/rope.h)
+    src/backends/NullBackend.cpp
     src/backends/MiniaudioBackend.cpp
     src/backends/RtAudioBackend.cpp
 )

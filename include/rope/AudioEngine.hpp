@@ -50,12 +50,13 @@ struct Event {
 /// Real-time audio engine: opens one output stream and mixes any number of
 /// simultaneously-playing WAV voices on the audio thread.
 ///
-/// Threading contract:
-///   * Construct/start/stop and all asset/playback calls happen on a single
-///     "control thread" (typically your game/main thread).
-///   * The audio callback runs on a separate real-time thread owned by RtAudio.
-///   * The two communicate through a lock-free queue — the audio thread never
-///     locks or allocates.
+/// Threading:
+///   * The public API is thread-safe: control calls (load/play/stop/set*/poll/
+///     suspend/resume) are serialized by an internal mutex, so they may be made
+///     from any thread (e.g. a game's job system).
+///   * The audio callback runs on a separate real-time thread. It never takes
+///     that mutex, locks, or allocates — control and audio communicate through
+///     lock-free queues.
 class AudioEngine {
 public:
     AudioEngine();
@@ -66,7 +67,7 @@ public:
     AudioEngine(AudioEngine&&)                 = delete;
     AudioEngine& operator=(AudioEngine&&)      = delete;
 
-    // ---- Lifecycle (control thread) ----
+    // ---- Lifecycle (any thread) ----
 
     /// Open the default output device and start streaming.
     /// @param sampleRate   preferred rate in Hz (0 = engine default, 48000)
@@ -82,7 +83,7 @@ public:
 
     [[nodiscard]] bool isRunning() const noexcept;
 
-    // ---- Asset management (control thread) ----
+    // ---- Asset management (any thread) ----
 
     /// Decode a WAV file and add it to the engine's sound bank.
     /// @return a SoundHandle, or kInvalidSound on failure.
@@ -99,7 +100,7 @@ public:
     /// @return false if the handle is invalid or already retired.
     bool unloadSound(SoundHandle sound);
 
-    // ---- Playback (control thread) ----
+    // ---- Playback (any thread) ----
 
     /// Start a new voice playing the given sound. Returns immediately;
     /// the voice begins on the next audio callback.
@@ -107,25 +108,30 @@ public:
     VoiceHandle play(SoundHandle sound, const PlayParams& params = {});
 
     /// Stop a specific voice (no-op if it already finished).
-    void stopVoice(VoiceHandle voice);
+    /// @return false if the command queue was full (try again next frame).
+    bool stopVoice(VoiceHandle voice);
 
     /// Stop every currently-playing voice.
-    void stopAll();
+    /// @return false if the command queue was full.
+    bool stopAll();
 
-    // ---- Live mix control (control thread) ----
+    // ---- Live mix control (any thread) ----
 
     /// Change a playing voice's gain (no-op if it already finished).
-    void setVoiceGain(VoiceHandle voice, float gain);
+    /// @return false if the command queue was full.
+    bool setVoiceGain(VoiceHandle voice, float gain);
 
     /// Change a playing voice's pan in [-1, 1] (no-op if it already finished).
-    void setVoicePan(VoiceHandle voice, float pan);
+    /// @return false if the command queue was full.
+    bool setVoicePan(VoiceHandle voice, float pan);
 
     /// Set the master output gain applied to the whole mix.
-    void setMasterVolume(float gain);
+    /// @return false if the command queue was full.
+    bool setMasterVolume(float gain);
 
     [[nodiscard]] float masterVolume() const noexcept;
 
-    // ---- Events (control thread) ----
+    // ---- Events (any thread) ----
 
     /// Retrieve the next pending engine event. Call repeatedly until it returns
     /// false (typically once per frame). The audio thread never calls back into
@@ -133,7 +139,7 @@ public:
     /// @return true if an event was written to @p out, false if none pending.
     bool pollEvent(Event& out);
 
-    // ---- Mobile lifecycle (control thread) ----
+    // ---- Mobile lifecycle (any thread) ----
 
     /// Suspend the audio device (e.g. on app background / audio-focus loss).
     /// Voices and loaded sounds are preserved; emits an Suspended event.
@@ -147,6 +153,15 @@ public:
 
     [[nodiscard]] unsigned int sampleRate() const noexcept;
     [[nodiscard]] unsigned int outputChannels() const noexcept;
+
+    // ---- Offline rendering (testing / headless) ----
+
+    /// Render @p nFrames of interleaved float output by running the mixer
+    /// synchronously on the calling thread. Use ONLY with BackendType::Null
+    /// (or an unstarted engine) — never while a real device backend is
+    /// streaming, which would race the audio thread. The output buffer must
+    /// hold nFrames * outputChannels() floats.
+    void renderOffline(float* out, unsigned int nFrames);
 
 private:
     struct Impl;

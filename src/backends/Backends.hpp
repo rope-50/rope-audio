@@ -10,6 +10,9 @@
 
 namespace rope::backends {
 
+// Always available — no device, for offline/headless rendering and tests.
+std::unique_ptr<AudioBackend> createNullBackend();
+
 #if defined(ROPE_AUDIO_BACKEND_MINIAUDIO)
 std::unique_ptr<AudioBackend> createMiniaudioBackend();
 #endif

@@ -52,6 +52,7 @@ add_library(rope_audio SHARED
   "${ROPE_ROOT}/src/AudioBackend.cpp"
   "${ROPE_ROOT}/src/WavLoader.cpp"
   "${ROPE_ROOT}/src/rope_c.cpp"
+  "${ROPE_ROOT}/src/backends/NullBackend.cpp"
   "${ROPE_ROOT}/src/backends/MiniaudioBackend.cpp"
 )
 

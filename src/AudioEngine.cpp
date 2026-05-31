@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 namespace rope {
@@ -21,8 +22,8 @@ constexpr unsigned int kDefaultOutChannels  = 2;    ///< requested stereo output
 constexpr float        kCenterPanGain       = 0.70710678f; // cos(pi/4) = sin(pi/4)
 
 /// Constant-power pan law: pan in [-1,1] -> per-channel gains. Center is -3 dB
-/// on each side, preserving perceived loudness. Cheap enough to call per command
-/// (never per sample).
+/// on each side, preserving perceived loudness. Computed on the control thread
+/// only (never on the audio thread) — std::cos/sin are not guaranteed RT-safe.
 inline void computePan(float pan, float& panL, float& panR) {
     if (pan < -1.0f) pan = -1.0f;
     else if (pan > 1.0f) pan = 1.0f;
@@ -36,10 +37,11 @@ enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetMaster };
 
 struct Command {
     CommandType        type{};
-    const AudioBuffer* buffer = nullptr; // Play only
+    const AudioBuffer* buffer = nullptr;          // Play only
     VoiceHandle        voice  = kInvalidVoice;
-    float              gain   = 1.0f;    // Play / SetGain / SetMaster
-    float              pan    = 0.0f;    // Play / SetPan
+    float              gain   = 1.0f;             // Play / SetGain / SetMaster
+    float              panL   = kCenterPanGain;   // Play / SetPan (precomputed)
+    float              panR   = kCenterPanGain;
     bool               loop   = false;
 };
 
@@ -90,7 +92,6 @@ struct Voice {
     const AudioBuffer* buffer   = nullptr;
     std::size_t        position = 0;     // next frame to read
     float              gain     = 1.0f;
-    float              pan      = 0.0f;
     float              panL     = kCenterPanGain;
     float              panR     = kCenterPanGain;
     bool               loop     = false;
@@ -101,18 +102,26 @@ struct Voice {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Implementation (pimpl) — keeps the backend and the mixer out of the public API.
+// Implementation (pimpl)
 // ---------------------------------------------------------------------------
 struct AudioEngine::Impl {
     std::unique_ptr<AudioBackend> backend;
-    bool              running    = false;
-    bool              suspended  = false;
-    unsigned int      sampleRate = kDefaultSampleRate;
-    unsigned int      channels   = kDefaultOutChannels;
-    AudioStreamConfig startConfig{};   // remembered for resume()
 
-    // Sound bank — control thread only. unique_ptr gives stable addresses so the
-    // audio thread can hold raw pointers into it safely.
+    // Serializes ALL control-thread API calls so they may come from any thread.
+    // The audio thread never takes this mutex.
+    std::mutex controlMutex;
+
+    // Cross-thread scalar state — atomic so the audio thread / queries read it
+    // without the mutex and without UB.
+    std::atomic<bool>         running{false};
+    std::atomic<unsigned int> sampleRate{kDefaultSampleRate};
+    std::atomic<unsigned int> channels{kDefaultOutChannels};
+
+    bool              suspended = false;   // control thread only (under controlMutex)
+    AudioStreamConfig startConfig{};       // remembered for resume()
+
+    // Sound bank — control thread only (under controlMutex). unique_ptr gives
+    // stable addresses so the audio thread can hold raw pointers into it safely.
     std::vector<std::unique_ptr<AudioBuffer>> sounds;
     // Retired-but-still-referenced buffers; freed on stop() (RT thread joined).
     std::vector<std::unique_ptr<AudioBuffer>> retired;
@@ -121,11 +130,10 @@ struct AudioEngine::Impl {
     std::array<Voice, kMaxVoices> voices{};
     float master = 1.0f;                          // audio thread only
 
-    // Control -> audio command channel.
-    SpscQueue<Command, kCommandQueueCap> commands;
-    // audio -> control event channel + a small control-origin channel.
-    SpscQueue<EngineEvent, kEventQueueCap>     audioEvents;
-    SpscQueue<EngineEvent, kControlEventCap>   controlEvents;
+    // Control -> audio command channel + audio/control -> poll event channels.
+    SpscQueue<Command, kCommandQueueCap>     commands;
+    SpscQueue<EngineEvent, kEventQueueCap>   audioEvents;
+    SpscQueue<EngineEvent, kControlEventCap> controlEvents;
     std::atomic<std::uint32_t> droppedEvents{0};
 
     std::atomic<VoiceHandle>   nextVoiceId{1};
@@ -155,8 +163,8 @@ struct AudioEngine::Impl {
                 slot->buffer   = cmd.buffer;
                 slot->position = 0;
                 slot->gain     = cmd.gain;
-                slot->pan      = cmd.pan;
-                computePan(cmd.pan, slot->panL, slot->panR);
+                slot->panL     = cmd.panL;   // precomputed on the control thread
+                slot->panR     = cmd.panR;
                 slot->loop     = cmd.loop;
                 slot->id       = cmd.voice;
                 slot->active   = true;
@@ -189,9 +197,7 @@ struct AudioEngine::Impl {
             case CommandType::SetPan:
                 for (Voice& v : voices) {
                     if (v.active && v.id == cmd.voice) {
-                        v.pan = cmd.pan;
-                        computePan(cmd.pan, v.panL, v.panR);
-                        break;
+                        v.panL = cmd.panL; v.panR = cmd.panR; break;
                     }
                 }
                 break;
@@ -203,7 +209,7 @@ struct AudioEngine::Impl {
     }
 
     void mix(float* out, unsigned int nFrames) {
-        const unsigned int outCh = channels;
+        const unsigned int outCh = channels.load(std::memory_order_relaxed);
         std::memset(out, 0, sizeof(float) * nFrames * outCh);
 
         for (Voice& v : voices) {
@@ -225,7 +231,6 @@ struct AudioEngine::Impl {
                     }
                 }
                 const float* src = &buf.samples[v.position * srcCh];
-                // Mono source -> both ears; stereo+ -> first two channels.
                 const float l = src[0];
                 const float r = (srcCh == 1) ? src[0] : src[1];
 
@@ -234,32 +239,24 @@ struct AudioEngine::Impl {
                 } else {
                     out[f * outCh + 0] += l * v.gain * v.panL;
                     out[f * outCh + 1] += r * v.gain * v.panR;
-                    // Output channels beyond stereo are left silent for now.
                 }
                 ++v.position;
             }
         }
 
-        // Master gain over the whole block (instantaneous in v1; a limiter /
-        // ramp would go here in a later version).
         if (master != 1.0f) {
             const std::size_t total = static_cast<std::size_t>(nFrames) * outCh;
             for (std::size_t i = 0; i < total; ++i) out[i] *= master;
         }
     }
 
-    // RenderCallback invoked by whichever backend is active, on its RT thread.
     static void render(float* out, unsigned int frames, void* user) {
         auto* self = static_cast<Impl*>(user);
         self->drainCommands();
         self->mix(out, frames);
     }
 
-    // ---- control thread ----
-
-    bool pushCommand(const Command& cmd) {
-        return commands.push(cmd);
-    }
+    bool pushCommand(const Command& cmd) { return commands.push(cmd); }
 };
 
 namespace {
@@ -282,7 +279,7 @@ Event translateEvent(const EngineEvent& e) {
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Public API
+// Public API (all control methods serialized by impl_->controlMutex)
 // ---------------------------------------------------------------------------
 AudioEngine::AudioEngine() : impl_(std::make_unique<Impl>()) {}
 
@@ -290,7 +287,8 @@ AudioEngine::~AudioEngine() { stop(); }
 
 bool AudioEngine::start(unsigned int sampleRate, unsigned int bufferFrames,
                         BackendType backendType) {
-    if (impl_->running) return true;
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    if (impl_->running.load(std::memory_order_relaxed)) return true;
 
     impl_->backend = createAudioBackend(backendType);
     if (!impl_->backend) {
@@ -301,7 +299,7 @@ bool AudioEngine::start(unsigned int sampleRate, unsigned int bufferFrames,
     AudioStreamConfig config;
     config.sampleRate   = sampleRate ? sampleRate : kDefaultSampleRate;
     config.bufferFrames = bufferFrames;
-    config.channels     = impl_->channels;
+    config.channels     = impl_->channels.load(std::memory_order_relaxed);
 
     if (!impl_->backend->start(config, &Impl::render, impl_.get())) {
         std::fprintf(stderr, "[rope] failed to start audio backend\n");
@@ -309,63 +307,68 @@ bool AudioEngine::start(unsigned int sampleRate, unsigned int bufferFrames,
         return false;
     }
 
-    // Adopt whatever the device actually negotiated.
-    impl_->startConfig  = config;
-    impl_->sampleRate   = impl_->backend->sampleRate();
-    impl_->channels     = impl_->backend->channels();
-    impl_->running      = true;
-    impl_->suspended    = false;
+    impl_->startConfig = config;
+    impl_->sampleRate.store(impl_->backend->sampleRate(), std::memory_order_relaxed);
+    impl_->channels.store(impl_->backend->channels(), std::memory_order_relaxed);
+    impl_->suspended = false;
+    impl_->running.store(true, std::memory_order_relaxed);
 
     std::printf("[rope] backend: %s | %u Hz | %u ch\n",
-                impl_->backend->name(), impl_->sampleRate, impl_->channels);
+                impl_->backend->name(),
+                impl_->sampleRate.load(), impl_->channels.load());
     return true;
 }
 
 void AudioEngine::stop() {
-    if (!impl_->running) return;
-    if (impl_->backend) impl_->backend->stop();
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    if (!impl_->running.load(std::memory_order_relaxed)) return;
+    if (impl_->backend) impl_->backend->stop();   // joins the RT thread
     impl_->backend.reset();
-    impl_->running   = false;
+    impl_->running.store(false, std::memory_order_relaxed);
     impl_->suspended = false;
     impl_->retired.clear();   // RT thread is joined; safe to free retired buffers
 }
 
-bool AudioEngine::isRunning() const noexcept { return impl_->running; }
+bool AudioEngine::isRunning() const noexcept {
+    return impl_->running.load(std::memory_order_relaxed);
+}
 
 SoundHandle AudioEngine::loadWav(const std::filesystem::path& path) {
     std::optional<AudioBuffer> decoded = decodeWav(path);
-    if (!decoded) {
-        std::fprintf(stderr, "[rope] failed to decode WAV: %s\n",
-                     path.string().c_str());
+    if (!decoded || decoded->channels == 0) {
+        std::fprintf(stderr, "[rope] failed to decode WAV: %s\n", path.string().c_str());
         return kInvalidSound;
     }
-    if (impl_->running && decoded->sampleRate != impl_->sampleRate) {
+    if (impl_->running.load() && decoded->sampleRate != impl_->sampleRate.load()) {
         std::fprintf(stderr,
             "[rope] warning: '%s' is %u Hz but the engine runs at %u Hz; "
             "it will play back pitch-shifted (resampling not implemented yet)\n",
-            path.string().c_str(), decoded->sampleRate, impl_->sampleRate);
+            path.string().c_str(), decoded->sampleRate, impl_->sampleRate.load());
     }
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     impl_->sounds.push_back(std::make_unique<AudioBuffer>(std::move(*decoded)));
     return static_cast<SoundHandle>(impl_->sounds.size() - 1);
 }
 
 SoundHandle AudioEngine::loadWavMemory(const void* data, std::size_t size) {
     std::optional<AudioBuffer> decoded = decodeWav(data, size);
-    if (!decoded) {
+    if (!decoded || decoded->channels == 0) {
         std::fprintf(stderr, "[rope] failed to decode WAV from memory (%zu bytes)\n", size);
         return kInvalidSound;
     }
-    if (impl_->running && decoded->sampleRate != impl_->sampleRate) {
+    if (impl_->running.load() && decoded->sampleRate != impl_->sampleRate.load()) {
         std::fprintf(stderr,
             "[rope] warning: in-memory WAV is %u Hz but the engine runs at %u Hz; "
             "it will play back pitch-shifted (resampling not implemented yet)\n",
-            decoded->sampleRate, impl_->sampleRate);
+            decoded->sampleRate, impl_->sampleRate.load());
     }
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     impl_->sounds.push_back(std::make_unique<AudioBuffer>(std::move(*decoded)));
     return static_cast<SoundHandle>(impl_->sounds.size() - 1);
 }
 
 bool AudioEngine::unloadSound(SoundHandle sound) {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     if (sound >= impl_->sounds.size() || !impl_->sounds[sound]) return false;
     // Move the buffer aside instead of freeing: voices may still reference it.
     // It is reclaimed on stop(), when the audio thread is guaranteed joined.
@@ -375,6 +378,7 @@ bool AudioEngine::unloadSound(SoundHandle sound) {
 }
 
 VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     if (sound >= impl_->sounds.size() || !impl_->sounds[sound]) return kInvalidVoice;
 
     const VoiceHandle id =
@@ -385,7 +389,7 @@ VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
     cmd.buffer = impl_->sounds[sound].get();
     cmd.voice  = id;
     cmd.gain   = params.gain;
-    cmd.pan    = params.pan;
+    computePan(params.pan, cmd.panL, cmd.panR);   // off the audio thread
     cmd.loop   = params.loop;
 
     if (!impl_->pushCommand(cmd)) {
@@ -395,41 +399,46 @@ VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
     return id;
 }
 
-void AudioEngine::stopVoice(VoiceHandle voice) {
+bool AudioEngine::stopVoice(VoiceHandle voice) {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     Command cmd;
     cmd.type  = CommandType::Stop;
     cmd.voice = voice;
-    impl_->pushCommand(cmd);
+    return impl_->pushCommand(cmd);
 }
 
-void AudioEngine::stopAll() {
+bool AudioEngine::stopAll() {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     Command cmd;
     cmd.type = CommandType::StopAll;
-    impl_->pushCommand(cmd);
+    return impl_->pushCommand(cmd);
 }
 
-void AudioEngine::setVoiceGain(VoiceHandle voice, float gain) {
+bool AudioEngine::setVoiceGain(VoiceHandle voice, float gain) {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     Command cmd;
     cmd.type  = CommandType::SetGain;
     cmd.voice = voice;
     cmd.gain  = gain;
-    impl_->pushCommand(cmd);
+    return impl_->pushCommand(cmd);
 }
 
-void AudioEngine::setVoicePan(VoiceHandle voice, float pan) {
+bool AudioEngine::setVoicePan(VoiceHandle voice, float pan) {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     Command cmd;
     cmd.type  = CommandType::SetPan;
     cmd.voice = voice;
-    cmd.pan   = pan;
-    impl_->pushCommand(cmd);
+    computePan(pan, cmd.panL, cmd.panR);          // off the audio thread
+    return impl_->pushCommand(cmd);
 }
 
-void AudioEngine::setMasterVolume(float gain) {
+bool AudioEngine::setMasterVolume(float gain) {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     impl_->masterShadow.store(gain, std::memory_order_relaxed);
     Command cmd;
     cmd.type = CommandType::SetMaster;
     cmd.gain = gain;
-    impl_->pushCommand(cmd);
+    return impl_->pushCommand(cmd);
 }
 
 float AudioEngine::masterVolume() const noexcept {
@@ -437,6 +446,7 @@ float AudioEngine::masterVolume() const noexcept {
 }
 
 bool AudioEngine::pollEvent(Event& out) {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
     EngineEvent e;
     // Control-origin events first (Suspended/Resumed).
     if (impl_->controlEvents.pop(e)) { out = translateEvent(e); return true; }
@@ -453,26 +463,41 @@ bool AudioEngine::pollEvent(Event& out) {
 }
 
 void AudioEngine::suspend() {
-    if (!impl_->running || impl_->suspended) return;
-    if (impl_->backend) impl_->backend->stop();
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    if (!impl_->running.load(std::memory_order_relaxed) || impl_->suspended) return;
+    if (impl_->backend) impl_->backend->stop();   // joins the RT thread
     impl_->suspended = true;
     impl_->controlEvents.push({EngineEvent::Kind::Suspended, kInvalidVoice, 0, 0});
 }
 
 void AudioEngine::resume() {
-    if (!impl_->running || !impl_->suspended) return;
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    if (!impl_->running.load(std::memory_order_relaxed) || !impl_->suspended) return;
     if (impl_->backend &&
         impl_->backend->start(impl_->startConfig, &Impl::render, impl_.get())) {
-        impl_->sampleRate = impl_->backend->sampleRate();
-        impl_->channels   = impl_->backend->channels();
+        impl_->sampleRate.store(impl_->backend->sampleRate(), std::memory_order_relaxed);
+        impl_->channels.store(impl_->backend->channels(), std::memory_order_relaxed);
+        impl_->suspended = false;
+        impl_->controlEvents.push({EngineEvent::Kind::Resumed, kInvalidVoice, 0, 0});
     } else {
-        std::fprintf(stderr, "[rope] resume(): failed to restart the audio device\n");
+        // Stay suspended so the host can retry; do NOT emit a false Resumed.
+        std::fprintf(stderr,
+            "[rope] resume(): failed to restart the audio device; staying suspended\n");
     }
-    impl_->suspended = false;
-    impl_->controlEvents.push({EngineEvent::Kind::Resumed, kInvalidVoice, 0, 0});
 }
 
-unsigned int AudioEngine::sampleRate() const noexcept { return impl_->sampleRate; }
-unsigned int AudioEngine::outputChannels() const noexcept { return impl_->channels; }
+unsigned int AudioEngine::sampleRate() const noexcept {
+    return impl_->sampleRate.load(std::memory_order_relaxed);
+}
+unsigned int AudioEngine::outputChannels() const noexcept {
+    return impl_->channels.load(std::memory_order_relaxed);
+}
+
+void AudioEngine::renderOffline(float* out, unsigned int nFrames) {
+    // Offline path: the caller drives the mixer directly (no RT thread). Single-
+    // threaded use is assumed, so no controlMutex is taken here.
+    impl_->drainCommands();
+    impl_->mix(out, nFrames);
+}
 
 } // namespace rope

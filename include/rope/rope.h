@@ -64,6 +64,7 @@ typedef enum rope_backend {
     ROPE_BACKEND_MINIAUDIO = 1,       /* cross-platform incl. Android/iOS */
     ROPE_BACKEND_RTAUDIO = 2,         /* desktop; native API (WASAPI on Win) */
     ROPE_BACKEND_RTAUDIO_ASIO = 3,    /* Windows; force ASIO (low latency) */
+    ROPE_BACKEND_NULL = 4,            /* no device; offline/headless (renderoffline) */
     ROPE_BACKEND_FORCE_U32 = 0x7fffffff
 } rope_backend;
 
@@ -148,6 +149,12 @@ ROPE_API rope_result ROPE_CALL rope_engine_resume(rope_engine_t);
 
 /* ---- Events (poll on the control thread; drain in a while-loop) ----------- */
 ROPE_API int32_t ROPE_CALL rope_poll_event(rope_engine_t, rope_event* out); /* 1=filled, 0=empty */
+
+/* ---- Offline rendering (use with ROPE_BACKEND_NULL; testing / headless) ---
+ * Renders `frames` frames of interleaved float into `out` (frames * channels
+ * floats) by running the mixer synchronously. Do NOT call while a real device
+ * backend is streaming. */
+ROPE_API void ROPE_CALL rope_render_offline(rope_engine_t, float* out, uint32_t frames);
 
 #ifdef __cplusplus
 } /* extern "C" */

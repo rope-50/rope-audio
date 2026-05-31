@@ -27,6 +27,8 @@ std::unique_ptr<AudioBackend> makeRtAudio(bool preferAsio) {
 
 std::unique_ptr<AudioBackend> createAudioBackend(BackendType type) {
     switch (type) {
+    case BackendType::Null:
+        return backends::createNullBackend();
     case BackendType::Miniaudio:
         return makeMiniaudio();
     case BackendType::RtAudio:
