@@ -121,6 +121,10 @@ class RopeEngine {
   int get sampleRate => _b.engineSampleRate(_engine);
   int get channels => _b.engineChannels(_engine);
 
+  /// The engine's monotonic output-frame clock (frames produced since start).
+  /// Pass `currentFrame + n` as [play]'s `startFrame` to cue sample-accurately.
+  int get currentFrame => _b.currentFrame(_engine);
+
   /// Decode an audio file (WAV/FLAC/MP3/OGG, auto-detected) into the sound bank.
   /// Returns a sound handle or [kInvalidSound] on failure.
   int loadFile(String path) {
@@ -156,7 +160,8 @@ class RopeEngine {
       bool loop = false,
       double pitch = 1.0,
       double fadeIn = 0.0,
-      RopeBus bus = RopeBus.sfx}) {
+      RopeBus bus = RopeBus.sfx,
+      int startFrame = 0}) {
     final pp = calloc<RopePlayParamsNative>();
     try {
       pp.ref.gain = gain;
@@ -165,7 +170,9 @@ class RopeEngine {
       pp.ref.pitch = pitch;
       pp.ref.fadeIn = fadeIn;
       pp.ref.bus = bus.index;
-      return _b.play(_engine, sound, pp);
+      return startFrame > 0
+          ? _b.playScheduled(_engine, sound, pp, startFrame)
+          : _b.play(_engine, sound, pp);
     } finally {
       calloc.free(pp);
     }

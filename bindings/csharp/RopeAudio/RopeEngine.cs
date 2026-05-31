@@ -54,6 +54,11 @@ namespace Rope
         public uint SampleRate => Native.rope_engine_sample_rate(_engine);
         public uint Channels => Native.rope_engine_channels(_engine);
 
+        /// <summary>The engine's monotonic output-frame clock (frames since start).
+        /// Pass <c>CurrentFrame + n</c> as <see cref="Play"/>'s startFrame to cue
+        /// sample-accurately.</summary>
+        public ulong CurrentFrame => Native.rope_current_frame(_engine);
+
         /// <summary>Decode an audio file (WAV/FLAC/MP3/OGG, auto-detected) into the sound bank.</summary>
         /// <returns>A sound handle, or <see cref="RopeHandle.InvalidSound"/> on failure.</returns>
         public uint LoadWavFile(string path) => Native.rope_load_wav_file(_engine, path);
@@ -80,7 +85,8 @@ namespace Rope
         /// fades gain up over the given seconds.</summary>
         /// <returns>A voice handle, or <see cref="RopeHandle.InvalidVoice"/>.</returns>
         public ulong Play(uint sound, float gain = 1f, float pan = 0f, bool loop = false,
-                          float pitch = 1f, float fadeIn = 0f, RopeBus bus = RopeBus.Sfx)
+                          float pitch = 1f, float fadeIn = 0f, RopeBus bus = RopeBus.Sfx,
+                          ulong startFrame = 0)
         {
             Native.rope_play_params_default(out var p);
             p.Gain = gain;
@@ -89,7 +95,9 @@ namespace Rope
             p.Pitch = pitch;
             p.FadeIn = fadeIn;
             p.Bus = bus;
-            return Native.rope_play(_engine, sound, in p);
+            return startFrame > 0
+                ? Native.rope_play_scheduled(_engine, sound, in p, startFrame)
+                : Native.rope_play(_engine, sound, in p);
         }
 
         /// <summary>Stop a voice, optionally fading out over <paramref name="fadeOut"/> seconds.</summary>

@@ -36,6 +36,11 @@ struct PlayParams {
     float pitch  = 1.0f;  ///< speed/pitch ratio (1 = original, 2 = +1 octave, 0.5 = -1 octave)
     float fadeIn = 0.0f;  ///< fade-in time in seconds (0 = start at full gain)
     Bus   bus    = Bus::Sfx; ///< category bus this voice is routed through
+    /// Absolute output-frame time at which the voice should start, on the
+    /// engine's monotonic sample clock (see AudioEngine::currentFrame). 0 (the
+    /// default) or any time already in the past means "start immediately". Use
+    /// `currentFrame() + N` to start the voice sample-accurately N frames ahead.
+    std::uint64_t startFrame = 0;
 };
 
 /// Reason a voice stopped (carried by Event::reason).
@@ -186,6 +191,14 @@ public:
 
     [[nodiscard]] unsigned int sampleRate() const noexcept;
     [[nodiscard]] unsigned int outputChannels() const noexcept;
+
+    /// The engine's monotonic output-frame clock: the number of frames the mixer
+    /// has produced since start(). Read it to schedule sample-accurate playback,
+    /// e.g. `play({.startFrame = currentFrame() + sampleRate()/2})` to start a
+    /// voice ~half a second from now. Advances on the audio thread; the value
+    /// read lags real "now" by up to one device buffer, so schedule a little
+    /// ahead. Resets to 0 on start()/stop().
+    [[nodiscard]] std::uint64_t currentFrame() const noexcept;
 
     /// Number of sounds currently holding decoded data in the bank (a memory/
     /// asset stat). A sound retired via unloadSound() while still feeding a

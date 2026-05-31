@@ -405,6 +405,59 @@ TEST(Decode, FlacFixture) { decodeFixtureCheck("tone.flac"); }
 TEST(Decode, Mp3Fixture)  { decodeFixtureCheck("tone.mp3"); }
 TEST(Decode, OggFixture)  { decodeFixtureCheck("tone.ogg"); }
 
+TEST(Scheduling, ClockAdvancesAndResets) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    EXPECT_EQ(e.currentFrame(), 0u);
+    std::vector<float> out(128 * 2, 0.0f);
+    e.renderOffline(out.data(), 128);
+    EXPECT_EQ(e.currentFrame(), 128u);
+    e.renderOffline(out.data(), 128);
+    EXPECT_EQ(e.currentFrame(), 256u);
+    e.stop();
+    EXPECT_EQ(e.currentFrame(), 0u);   // reset on stop
+}
+
+TEST(Scheduling, VoiceStartsAtExactFrame) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+
+    std::vector<float> warm(100 * 2, 0.0f);
+    e.renderOffline(warm.data(), 100);                       // clock -> 100
+    EXPECT_EQ(e.currentFrame(), 100u);
+
+    e.play(s, PlayParams{.pan = -1.0f, .startFrame = 150});  // 50 frames into next block
+
+    std::vector<float> out(100 * 2, 0.0f);
+    e.renderOffline(out.data(), 100);                        // absolute frames [100,200)
+    EXPECT_EQ(e.currentFrame(), 200u);
+    EXPECT_NEAR(out[49 * 2], 0.0f, 1e-6f);                   // abs 149: still silent
+    EXPECT_NEAR(out[50 * 2], 0.5f, 0.02f);                   // abs 150: starts exactly here
+    EXPECT_NEAR(out[80 * 2], 0.5f, 0.02f);                   // and keeps playing
+}
+
+TEST(Scheduling, PendingVoiceIsSilentThenPlays) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+    e.play(s, PlayParams{.pan = -1.0f, .startFrame = 500});
+
+    std::vector<float> early(100 * 2, 0.0f);
+    e.renderOffline(early.data(), 100);                      // [0,100): entirely before 500
+    EXPECT_EQ(energy(early), 0.0f);                          // silent while pending
+    Event ev;
+    bool finished = false;
+    while (e.pollEvent(ev)) {
+        if (ev.type == EventType::VoiceFinished) finished = true;
+    }
+    EXPECT_FALSE(finished);                                  // not started, not finished
+
+    std::vector<float> big(600 * 2, 0.0f);
+    e.renderOffline(big.data(), 600);                        // [100,700): crosses 500
+    EXPECT_NEAR(big[(500 - 100) * 2], 0.5f, 0.02f);          // audible from abs 500
+}
+
 TEST(Buses, DefaultsToSfxAtUnityGain) {
     AudioEngine e;
     e.start(48000, 0, BackendType::Null);

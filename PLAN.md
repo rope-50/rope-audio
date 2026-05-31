@@ -79,8 +79,9 @@ serves pure-GDScript users.
 
 - [ ] **Higher-quality resampling** (windowed-sinc) as an opt-in alternative to
       the current linear interpolator; A/B test vs linear.
-- [ ] **Sample-accurate scheduling** — start a voice at an absolute frame time
-      (tight musical/looping sync).
+- [x] **Sample-accurate scheduling** — start a voice at an absolute frame on a
+      monotonic sample clock (`currentFrame()` + `PlayParams.startFrame` /
+      `rope_play_scheduled`); voices begin at the exact mid-block frame.
 - [x] **Category buses** (SFX / Music / UI) with smoothed per-group volume
       (voice → bus → master → limiter; RT-safe precomputed per-frame bus gain).
       *Sub-item still open: per-bus mute/solo.*

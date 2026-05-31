@@ -51,6 +51,20 @@ rope::Bus mapBus(rope_bus b) {
     }
 }
 
+// Build C++ PlayParams from the C struct (NULL = defaults). Returns false if a
+// finite-valued field is NaN/Inf (rejected). startFrame is set by the caller.
+bool buildPlayParams(const rope_play_params* p, rope::PlayParams& params) {
+    if (!p) return true;
+    if (!isFiniteF(p->gain) || !isFiniteF(p->pan)) return false;
+    params.gain   = p->gain;
+    params.pan    = p->pan;
+    params.loop   = p->loop != 0;
+    params.pitch  = (p->pitch > 0.0f) ? p->pitch : 1.0f;   // 0/NaN -> neutral
+    params.fadeIn = (p->fade_in > 0.0f) ? p->fade_in : 0.0f;
+    params.bus    = mapBus(p->bus);
+    return true;
+}
+
 rope_voice_end_reason mapReason(rope::VoiceEndReason r) {
     switch (r) {
     case rope::VoiceEndReason::Stopped: return ROPE_VOICE_END_STOPPED;
@@ -146,6 +160,12 @@ uint32_t rope_engine_channels(rope_engine_t e) {
     catch (...) { return 0; }
 }
 
+uint64_t rope_current_frame(rope_engine_t e) {
+    if (!e) return 0;
+    try { return e->engine.currentFrame(); }
+    catch (...) { return 0; }
+}
+
 rope_sound rope_load_wav_file(rope_engine_t e, const char* utf8_path) {
     if (!e || !utf8_path) return ROPE_INVALID_SOUND;
     try {
@@ -174,15 +194,20 @@ rope_voice rope_play(rope_engine_t e, rope_sound s, const rope_play_params* p) {
     if (!e) return ROPE_INVALID_VOICE;
     try {
         rope::PlayParams params;
-        if (p) {
-            if (!isFiniteF(p->gain) || !isFiniteF(p->pan)) return ROPE_INVALID_VOICE;
-            params.gain   = p->gain;
-            params.pan    = p->pan;
-            params.loop   = p->loop != 0;
-            params.pitch  = (p->pitch > 0.0f) ? p->pitch : 1.0f;   // 0/NaN -> neutral
-            params.fadeIn = (p->fade_in > 0.0f) ? p->fade_in : 0.0f;
-            params.bus    = mapBus(p->bus);
-        }
+        if (!buildPlayParams(p, params)) return ROPE_INVALID_VOICE;
+        return e->engine.play(s, params);
+    } catch (...) {
+        return ROPE_INVALID_VOICE;
+    }
+}
+
+rope_voice rope_play_scheduled(rope_engine_t e, rope_sound s, const rope_play_params* p,
+                               uint64_t start_frame) {
+    if (!e) return ROPE_INVALID_VOICE;
+    try {
+        rope::PlayParams params;
+        if (!buildPlayParams(p, params)) return ROPE_INVALID_VOICE;
+        params.startFrame = start_frame;
         return e->engine.play(s, params);
     } catch (...) {
         return ROPE_INVALID_VOICE;

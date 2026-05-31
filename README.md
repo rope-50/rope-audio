@@ -163,10 +163,10 @@ Done in v0.1:
 - [x] Unity / Godot **C# (P/Invoke) bindings** + idiomatic wrapper (headless smoke in CI)
 - [x] Category buses (SFX / Music / UI) with smoothed group volume
 - [x] WAV / FLAC / MP3 / OGG decoding (format auto-detected from the data)
+- [x] Sample-accurate scheduling (start voices at an absolute frame on the sample clock)
 
 Next:
 - [ ] Higher-quality resampling (windowed-sinc)
-- [ ] Sample-accurate scheduling (start voices at an absolute frame time)
 - [ ] Mobile/desktop plugin glue beyond Windows (Android/iOS/macOS/Linux)
 - [ ] Device-changed / auto-reroute events
 ```

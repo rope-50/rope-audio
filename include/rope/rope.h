@@ -35,7 +35,7 @@ extern "C" {
 
 /* ---- Versioning ---------------------------------------------------------- */
 #define ROPE_ABI_VERSION_MAJOR 0u
-#define ROPE_ABI_VERSION_MINOR 5u
+#define ROPE_ABI_VERSION_MINOR 6u
 
 /* ---- Handles ------------------------------------------------------------- */
 typedef struct rope_engine* rope_engine_t; /* opaque; NULL = invalid */
@@ -136,6 +136,9 @@ ROPE_API rope_result   ROPE_CALL rope_engine_stop(rope_engine_t);
 ROPE_API int32_t       ROPE_CALL rope_engine_is_running(rope_engine_t); /* 0/1 */
 ROPE_API uint32_t      ROPE_CALL rope_engine_sample_rate(rope_engine_t);
 ROPE_API uint32_t      ROPE_CALL rope_engine_channels(rope_engine_t);
+/* Monotonic output-frame clock (frames produced since start). Read it to
+ * schedule sample-accurate playback via rope_play_scheduled; resets on start/stop. */
+ROPE_API uint64_t      ROPE_CALL rope_current_frame(rope_engine_t);
 
 /* ---- Assets -------------------------------------------------------------- */
 /* Decode an audio asset into the sound bank. The container is detected from the
@@ -147,6 +150,12 @@ ROPE_API rope_result ROPE_CALL rope_unload_sound(rope_engine_t, rope_sound);
 
 /* ---- Playback ------------------------------------------------------------ */
 ROPE_API rope_voice  ROPE_CALL rope_play(rope_engine_t, rope_sound, const rope_play_params* /*NULL=defaults*/);
+/* Like rope_play, but the voice starts at absolute output-frame `start_frame` on
+ * the sample clock (see rope_current_frame). A time of 0 or already in the past
+ * starts immediately. Use currentFrame + N for sample-accurate cueing. */
+ROPE_API rope_voice  ROPE_CALL rope_play_scheduled(rope_engine_t, rope_sound,
+                                                   const rope_play_params* /*NULL=defaults*/,
+                                                   uint64_t start_frame);
 ROPE_API rope_result ROPE_CALL rope_stop_voice(rope_engine_t, rope_voice);
 /* Stop a voice with a fade-out in seconds (0 behaves like rope_stop_voice). */
 ROPE_API rope_result ROPE_CALL rope_stop_voice_fade(rope_engine_t, rope_voice, float fade_seconds);

@@ -98,6 +98,9 @@ class RopeBindings {
             'rope_engine_sample_rate'),
         engineChannels = dl
             .lookupFunction<_U32EngineC, _U32EngineD>('rope_engine_channels'),
+        currentFrame = dl.lookupFunction<
+            Uint64 Function(Pointer<RopeEngineHandle>),
+            int Function(Pointer<RopeEngineHandle>)>('rope_current_frame'),
         loadWavFile = dl.lookupFunction<
             Uint32 Function(Pointer<RopeEngineHandle>, Pointer<Utf8>),
             int Function(Pointer<RopeEngineHandle>,
@@ -115,6 +118,11 @@ class RopeBindings {
                 Pointer<RopePlayParamsNative>),
             int Function(Pointer<RopeEngineHandle>, int,
                 Pointer<RopePlayParamsNative>)>('rope_play'),
+        playScheduled = dl.lookupFunction<
+            Uint64 Function(Pointer<RopeEngineHandle>, Uint32,
+                Pointer<RopePlayParamsNative>, Uint64),
+            int Function(Pointer<RopeEngineHandle>, int,
+                Pointer<RopePlayParamsNative>, int)>('rope_play_scheduled'),
         stopVoice = dl.lookupFunction<
             Int32 Function(Pointer<RopeEngineHandle>, Uint64),
             int Function(Pointer<RopeEngineHandle>, int)>('rope_stop_voice'),
@@ -177,12 +185,15 @@ class RopeBindings {
   final int Function(Pointer<RopeEngineHandle>) engineIsRunning;
   final int Function(Pointer<RopeEngineHandle>) engineSampleRate;
   final int Function(Pointer<RopeEngineHandle>) engineChannels;
+  final int Function(Pointer<RopeEngineHandle>) currentFrame;
   final int Function(Pointer<RopeEngineHandle>, Pointer<Utf8>) loadWavFile;
   final int Function(Pointer<RopeEngineHandle>, Pointer<Void>, int)
       loadWavMemory;
   final int Function(Pointer<RopeEngineHandle>, int) unloadSound;
   final int Function(
       Pointer<RopeEngineHandle>, int, Pointer<RopePlayParamsNative>) play;
+  final int Function(Pointer<RopeEngineHandle>, int,
+      Pointer<RopePlayParamsNative>, int) playScheduled;
   final int Function(Pointer<RopeEngineHandle>, int) stopVoice;
   final int Function(Pointer<RopeEngineHandle>, int, double) stopVoiceFade;
   final int Function(Pointer<RopeEngineHandle>) stopAll;

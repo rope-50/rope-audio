@@ -97,6 +97,7 @@ struct Command {
     float              pitch  = 1.0f;             // Play / SetPitch
     std::uint32_t      rampFrames = 0;            // Play fade-in / Stop fade-out / set* smoothing
     std::uint32_t      bus    = 0;                // Play / SetBus (-> category bus index)
+    std::uint64_t      startFrame = 0;            // Play: absolute start time on the sample clock
     bool               loop   = false;
 };
 
@@ -152,6 +153,7 @@ struct Voice {
     float              pitch     = 1.0f;
     std::uint32_t      soundSlot = 0;     // owning sound-bank index (for reclamation)
     int                bus       = 0;     // category bus index [0, kBusCount)
+    std::uint64_t      startFrame = 0;    // absolute sample-clock frame to begin at
     bool               loop      = false;
     bool               active    = false;
     bool               stopAtRampEnd = false; // fade-out: finish when gain ramp hits 0
@@ -197,6 +199,12 @@ struct AudioEngine::Impl {
     std::array<Voice, kMaxVoices> voices{};
     Ramp master{1.0f, 1.0f, 0.0f, 0};             // audio thread only (smoothed)
     std::atomic<bool> limiterEnabled{true};       // master-bus soft clip
+
+    // Monotonic output-frame clock for sample-accurate scheduling. framePos is
+    // the absolute frame index of the next block, advanced on the audio thread;
+    // frameClock mirrors it for the control thread to read (currentFrame()).
+    std::uint64_t              framePos = 0;       // audio thread only
+    std::atomic<std::uint64_t> frameClock{0};      // control-thread mirror
 
     // Category buses (SFX/Music/UI): smoothed group gains applied per-frame after
     // the per-voice gain/pan and before the master. busBlock holds the precomputed
@@ -272,6 +280,7 @@ struct AudioEngine::Impl {
                 slot->pitch     = cmd.pitch;
                 slot->soundSlot = cmd.soundSlot;
                 slot->bus       = (cmd.bus < kBusCount) ? static_cast<int>(cmd.bus) : 0;
+                slot->startFrame = cmd.startFrame;
                 slot->loop      = cmd.loop;
                 slot->stopAtRampEnd = false;
                 slot->id        = cmd.voice;
@@ -333,6 +342,7 @@ struct AudioEngine::Impl {
         std::memset(out, 0, sizeof(float) * nFrames * outCh);
 
         const unsigned int rate = sampleRate.load(std::memory_order_relaxed);
+        const std::uint64_t blockStart = framePos;   // absolute frame index of out[0]
 
         // Precompute each bus's smoothed per-frame gain for this block. A single
         // pass advances each bus ramp exactly once per frame; voices on the bus
@@ -358,7 +368,17 @@ struct AudioEngine::Impl {
                                       : static_cast<double>(buf.sampleRate);
             const double step  = (static_cast<double>(buf.sampleRate) / denom) * v.pitch;
 
-            for (unsigned int f = 0; f < nFrames; ++f) {
+            // Sample-accurate start: voices scheduled in a later block produce
+            // nothing yet; one starting inside this block begins at its exact
+            // local frame (earlier frames stay silent for this voice).
+            unsigned int fStart = 0;
+            if (v.startFrame > blockStart) {
+                const std::uint64_t delta = v.startFrame - blockStart;
+                if (delta >= nFrames) continue;
+                fStart = static_cast<unsigned int>(delta);
+            }
+
+            for (unsigned int f = fStart; f < nFrames; ++f) {
                 if (v.stopAtRampEnd && v.gain.frames == 0) { // fade-out complete
                     finish(v, VoiceEndReason::Stopped);
                     break;
@@ -410,6 +430,10 @@ struct AudioEngine::Impl {
                 }
             }
         }
+
+        // Advance the monotonic sample clock and publish it for currentFrame().
+        framePos += nFrames;
+        frameClock.store(framePos, std::memory_order_relaxed);
     }
 
     static void render(float* out, unsigned int frames, void* user) {
@@ -486,6 +510,9 @@ bool AudioEngine::start(unsigned int sampleRate, unsigned int bufferFrames,
     config.bufferFrames = bufferFrames;
     config.channels     = impl_->channels.load(std::memory_order_relaxed);
 
+    impl_->framePos = 0;                                  // reset the sample clock
+    impl_->frameClock.store(0, std::memory_order_relaxed);
+
     if (!impl_->backend->start(config, &Impl::render, impl_.get())) {
         std::fprintf(stderr, "[rope] failed to start audio backend\n");
         impl_->backend.reset();
@@ -521,6 +548,8 @@ void AudioEngine::stop() {
         s.refCount = 0;
         if (s.retired) { s.buffer.reset(); s.retired = false; }
     }
+    impl_->framePos = 0;                                  // reset the sample clock
+    impl_->frameClock.store(0, std::memory_order_relaxed);
 }
 
 bool AudioEngine::isRunning() const noexcept {
@@ -588,6 +617,7 @@ VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
     cmd.pitch      = clampPitch(params.pitch);
     cmd.rampFrames = impl_->framesForSeconds(params.fadeIn);   // fade-in
     cmd.bus        = static_cast<std::uint32_t>(params.bus);   // clamped on the audio thread
+    cmd.startFrame = params.startFrame;                        // sample-accurate start
     cmd.loop       = params.loop;
 
     if (!impl_->pushCommand(cmd)) {
@@ -738,6 +768,10 @@ std::size_t AudioEngine::soundCount() const noexcept {
     std::size_t n = 0;
     for (const auto& s : impl_->sounds) if (s.buffer) ++n;
     return n;
+}
+
+std::uint64_t AudioEngine::currentFrame() const noexcept {
+    return impl_->frameClock.load(std::memory_order_relaxed);
 }
 
 void AudioEngine::renderOffline(float* out, unsigned int nFrames) {

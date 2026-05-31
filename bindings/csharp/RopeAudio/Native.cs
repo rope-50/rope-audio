@@ -118,6 +118,7 @@ namespace Rope
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern int rope_engine_is_running(IntPtr engine);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern uint rope_engine_sample_rate(IntPtr engine);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern uint rope_engine_channels(IntPtr engine);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern ulong rope_current_frame(IntPtr engine);
 
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern uint rope_load_wav_file(
             IntPtr engine, [MarshalAs(UnmanagedType.LPUTF8Str)] string utf8Path);
@@ -125,6 +126,7 @@ namespace Rope
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_unload_sound(IntPtr engine, uint sound);
 
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern ulong rope_play(IntPtr engine, uint sound, in RopePlayParams p);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern ulong rope_play_scheduled(IntPtr engine, uint sound, in RopePlayParams p, ulong startFrame);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_stop_voice(IntPtr engine, ulong voice);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_stop_voice_fade(IntPtr engine, ulong voice, float fadeSeconds);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_stop_all(IntPtr engine);
