@@ -251,6 +251,13 @@ rope_result rope_set_voice_pitch(rope_engine_t e, rope_voice v, float pitch) {
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 
+rope_result rope_set_voice_lowpass(rope_engine_t e, rope_voice v, float cutoff_hz) {
+    if (!e) return ROPE_ERR_INVALID_ARGUMENT;
+    if (!isFiniteF(cutoff_hz)) cutoff_hz = 0.0f;   // NaN/Inf -> off
+    try { return e->engine.setVoiceLowpass(v, cutoff_hz) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
+    catch (...) { return ROPE_ERR_UNKNOWN; }
+}
+
 rope_result rope_set_master_volume(rope_engine_t e, float gain) {
     if (!e || !isFiniteF(gain)) return ROPE_ERR_INVALID_ARGUMENT;
     try { return e->engine.setMasterVolume(gain) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }

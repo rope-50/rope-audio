@@ -35,7 +35,7 @@ extern "C" {
 
 /* ---- Versioning ---------------------------------------------------------- */
 #define ROPE_ABI_VERSION_MAJOR 0u
-#define ROPE_ABI_VERSION_MINOR 7u
+#define ROPE_ABI_VERSION_MINOR 8u
 
 /* ---- Handles ------------------------------------------------------------- */
 typedef struct rope_engine* rope_engine_t; /* opaque; NULL = invalid */
@@ -165,6 +165,8 @@ ROPE_API rope_result ROPE_CALL rope_stop_all(rope_engine_t);
 ROPE_API rope_result ROPE_CALL rope_set_voice_gain(rope_engine_t, rope_voice, float gain);
 ROPE_API rope_result ROPE_CALL rope_set_voice_pan(rope_engine_t, rope_voice, float pan);
 ROPE_API rope_result ROPE_CALL rope_set_voice_pitch(rope_engine_t, rope_voice, float pitch);
+/* One-pole low-pass cutoff in Hz (muffling). 0 or >= Nyquist disables it. */
+ROPE_API rope_result ROPE_CALL rope_set_voice_lowpass(rope_engine_t, rope_voice, float cutoff_hz);
 ROPE_API rope_result ROPE_CALL rope_set_master_volume(rope_engine_t, float gain);
 ROPE_API float       ROPE_CALL rope_get_master_volume(rope_engine_t);
 /* Category bus (SFX/Music/UI) group volume; smoothed (~5 ms). */

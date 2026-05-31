@@ -46,6 +46,19 @@ inline float clampPitch(float p) {
     return p;
 }
 
+/// One-pole low-pass coefficient `a` for a cutoff in Hz at sample rate `fs`:
+/// y += a*(x - y). Computed on the control thread (std::exp is not RT-safe).
+/// Returns 1.0 (passthrough) when the filter is disabled (cutoff <= 0 or
+/// >= Nyquist).
+inline float lowpassCoeff(float cutoffHz, unsigned int fs) {
+    if (fs == 0 || !(cutoffHz > 0.0f)) return 1.0f;
+    const float nyquist = 0.5f * static_cast<float>(fs);
+    if (cutoffHz >= nyquist) return 1.0f;
+    const float a = 1.0f - std::exp(-2.0f * 3.14159265358979323846f * cutoffHz
+                                    / static_cast<float>(fs));
+    return (a < 0.0f) ? 0.0f : (a > 1.0f ? 1.0f : a);
+}
+
 constexpr float kSoftClipThreshold = 0.7f;
 
 /// Master-bus soft clipper: transparent below ±threshold, then a smooth knee
@@ -85,7 +98,7 @@ struct Ramp {
 
 // --- Control -> audio thread messages --------------------------------------
 enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetPitch, SetMaster,
-                         SetBus, SetBusMute, SetBusSolo };
+                         SetBus, SetBusMute, SetBusSolo, SetLowpass };
 
 struct Command {
     CommandType        type{};
@@ -99,6 +112,7 @@ struct Command {
     std::uint32_t      rampFrames = 0;            // Play fade-in / Stop fade-out / set* smoothing
     std::uint32_t      bus    = 0;                // Play / SetBus (-> category bus index)
     std::uint64_t      startFrame = 0;            // Play: absolute start time on the sample clock
+    float              lpCoeff = 1.0f;            // Play / SetLowpass one-pole coeff (1 = off)
     bool               flag   = false;            // SetBusMute / SetBusSolo value
     bool               loop   = false;
 };
@@ -156,6 +170,9 @@ struct Voice {
     std::uint32_t      soundSlot = 0;     // owning sound-bank index (for reclamation)
     int                bus       = 0;     // category bus index [0, kBusCount)
     std::uint64_t      startFrame = 0;    // absolute sample-clock frame to begin at
+    float              lpCoeff   = 1.0f;  // one-pole low-pass coeff (1 = passthrough)
+    float              lpStateL  = 0.0f;  // filter state (left / mono)
+    float              lpStateR  = 0.0f;  // filter state (right)
     bool               loop      = false;
     bool               active    = false;
     bool               stopAtRampEnd = false; // fade-out: finish when gain ramp hits 0
@@ -310,6 +327,9 @@ struct AudioEngine::Impl {
                 slot->soundSlot = cmd.soundSlot;
                 slot->bus       = (cmd.bus < kBusCount) ? static_cast<int>(cmd.bus) : 0;
                 slot->startFrame = cmd.startFrame;
+                slot->lpCoeff   = cmd.lpCoeff;
+                slot->lpStateL  = 0.0f;
+                slot->lpStateR  = 0.0f;
                 slot->loop      = cmd.loop;
                 slot->stopAtRampEnd = false;
                 slot->id        = cmd.voice;
@@ -372,6 +392,11 @@ struct AudioEngine::Impl {
                 if (cmd.bus < kBusCount) {
                     busSoloed[cmd.bus] = cmd.flag;
                     recomputeAudible(static_cast<int>(cmd.rampFrames));
+                }
+                break;
+            case CommandType::SetLowpass:
+                for (Voice& v : voices) {
+                    if (v.active && v.id == cmd.voice) { v.lpCoeff = cmd.lpCoeff; break; }
                 }
                 break;
             }
@@ -443,8 +468,13 @@ struct AudioEngine::Impl {
 
                 const float* a = &buf.samples[i0 * srcCh];
                 const float* b = &buf.samples[i1 * srcCh];
-                const float  l = a[0] + (b[0] - a[0]) * frac;                  // mono / left
-                const float  r = (srcCh == 1) ? l : (a[1] + (b[1] - a[1]) * frac);
+                float        l = a[0] + (b[0] - a[0]) * frac;                  // mono / left
+                float        r = (srcCh == 1) ? l : (a[1] + (b[1] - a[1]) * frac);
+
+                if (v.lpCoeff < 1.0f) {           // one-pole low-pass (muffling)
+                    v.lpStateL += v.lpCoeff * (l - v.lpStateL); l = v.lpStateL;
+                    v.lpStateR += v.lpCoeff * (r - v.lpStateR); r = v.lpStateR;
+                }
 
                 const float g  = v.gain.next();   // smoothed gain (and fades)
                 const float pl = v.panL.next();
@@ -660,6 +690,8 @@ VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
     cmd.rampFrames = impl_->framesForSeconds(params.fadeIn);   // fade-in
     cmd.bus        = static_cast<std::uint32_t>(params.bus);   // clamped on the audio thread
     cmd.startFrame = params.startFrame;                        // sample-accurate start
+    cmd.lpCoeff    = lowpassCoeff(params.lowpassHz,
+                                  impl_->sampleRate.load(std::memory_order_relaxed));
     cmd.loop       = params.loop;
 
     if (!impl_->pushCommand(cmd)) {
@@ -712,6 +744,16 @@ bool AudioEngine::setVoicePitch(VoiceHandle voice, float pitch) {
     cmd.type  = CommandType::SetPitch;
     cmd.voice = voice;
     cmd.pitch = clampPitch(pitch);
+    return impl_->pushCommand(cmd);
+}
+
+bool AudioEngine::setVoiceLowpass(VoiceHandle voice, float cutoffHz) {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    Command cmd;
+    cmd.type    = CommandType::SetLowpass;
+    cmd.voice   = voice;
+    cmd.lpCoeff = lowpassCoeff(cutoffHz,
+                               impl_->sampleRate.load(std::memory_order_relaxed));
     return impl_->pushCommand(cmd);
 }
 

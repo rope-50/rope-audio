@@ -144,6 +144,10 @@ class RopeBindings {
             Int32 Function(Pointer<RopeEngineHandle>, Uint64, Float),
             int Function(Pointer<RopeEngineHandle>, int,
                 double)>('rope_set_voice_pitch'),
+        setVoiceLowpass = dl.lookupFunction<
+            Int32 Function(Pointer<RopeEngineHandle>, Uint64, Float),
+            int Function(Pointer<RopeEngineHandle>, int,
+                double)>('rope_set_voice_lowpass'),
         setMasterVolume = dl.lookupFunction<
             Int32 Function(Pointer<RopeEngineHandle>, Float),
             int Function(
@@ -212,6 +216,7 @@ class RopeBindings {
   final int Function(Pointer<RopeEngineHandle>, int, double) setVoiceGain;
   final int Function(Pointer<RopeEngineHandle>, int, double) setVoicePan;
   final int Function(Pointer<RopeEngineHandle>, int, double) setVoicePitch;
+  final int Function(Pointer<RopeEngineHandle>, int, double) setVoiceLowpass;
   final int Function(Pointer<RopeEngineHandle>, double) setMasterVolume;
   final double Function(Pointer<RopeEngineHandle>) getMasterVolume;
   final int Function(Pointer<RopeEngineHandle>, int, double) setBusVolume;

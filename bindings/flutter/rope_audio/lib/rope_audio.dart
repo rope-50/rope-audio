@@ -161,7 +161,8 @@ class RopeEngine {
       double pitch = 1.0,
       double fadeIn = 0.0,
       RopeBus bus = RopeBus.sfx,
-      int startFrame = 0}) {
+      int startFrame = 0,
+      double lowpassHz = 0.0}) {
     final pp = calloc<RopePlayParamsNative>();
     try {
       pp.ref.gain = gain;
@@ -170,9 +171,15 @@ class RopeEngine {
       pp.ref.pitch = pitch;
       pp.ref.fadeIn = fadeIn;
       pp.ref.bus = bus.index;
-      return startFrame > 0
+      final voice = startFrame > 0
           ? _b.playScheduled(_engine, sound, pp, startFrame)
           : _b.play(_engine, sound, pp);
+      // Applied as a queued command alongside the play, so the voice starts
+      // already muffled (both drain before the next audio block).
+      if (lowpassHz > 0 && voice != kInvalidVoice) {
+        _b.setVoiceLowpass(_engine, voice, lowpassHz);
+      }
+      return voice;
     } finally {
       calloc.free(pp);
     }
@@ -195,6 +202,11 @@ class RopeEngine {
       _b.setVoicePan(_engine, voice, pan);
   void setVoicePitch(int voice, double pitch) =>
       _b.setVoicePitch(_engine, voice, pitch);
+
+  /// Set a voice's one-pole low-pass cutoff in Hz (muffling). 0 or >= Nyquist
+  /// disables the filter. Click-free (the filter state is continuous).
+  void setVoiceLowpass(int voice, double cutoffHz) =>
+      _b.setVoiceLowpass(_engine, voice, cutoffHz);
 
   set masterVolume(double gain) => _b.setMasterVolume(_engine, gain);
   double get masterVolume => _b.getMasterVolume(_engine);

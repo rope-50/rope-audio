@@ -86,7 +86,7 @@ namespace Rope
         /// <returns>A voice handle, or <see cref="RopeHandle.InvalidVoice"/>.</returns>
         public ulong Play(uint sound, float gain = 1f, float pan = 0f, bool loop = false,
                           float pitch = 1f, float fadeIn = 0f, RopeBus bus = RopeBus.Sfx,
-                          ulong startFrame = 0)
+                          ulong startFrame = 0, float lowpassHz = 0f)
         {
             Native.rope_play_params_default(out var p);
             p.Gain = gain;
@@ -95,9 +95,13 @@ namespace Rope
             p.Pitch = pitch;
             p.FadeIn = fadeIn;
             p.Bus = bus;
-            return startFrame > 0
+            ulong voice = startFrame > 0
                 ? Native.rope_play_scheduled(_engine, sound, in p, startFrame)
                 : Native.rope_play(_engine, sound, in p);
+            // Queued with the play, so the voice starts already muffled.
+            if (lowpassHz > 0f && voice != RopeHandle.InvalidVoice)
+                Native.rope_set_voice_lowpass(_engine, voice, lowpassHz);
+            return voice;
         }
 
         /// <summary>Stop a voice, optionally fading out over <paramref name="fadeOut"/> seconds.</summary>
@@ -115,6 +119,11 @@ namespace Rope
             Native.rope_set_voice_pan(_engine, voice, pan);
         public void SetVoicePitch(ulong voice, float pitch) =>
             Native.rope_set_voice_pitch(_engine, voice, pitch);
+
+        /// <summary>Set a voice's one-pole low-pass cutoff in Hz (muffling). 0 or
+        /// &gt;= Nyquist disables it. Click-free (continuous filter state).</summary>
+        public void SetVoiceLowpass(ulong voice, float cutoffHz) =>
+            Native.rope_set_voice_lowpass(_engine, voice, cutoffHz);
 
         public float MasterVolume
         {

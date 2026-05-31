@@ -89,7 +89,8 @@ serves pure-GDScript users.
       plumbing) + host re-query of rate/channels.
 - [x] **OGG/FLAC/MP3 decoding** (dr_libs / stb_vorbis) beyond WAV — format
       auto-detected from the data; decode tests run in CI on ffmpeg-made fixtures.
-- [ ] Optional per-voice low-pass/one-pole filter for distance attenuation.
+- [x] Per-voice one-pole low-pass filter (muffling: distance / occlusion /
+      underwater) — coefficient computed off the audio thread; click-free.
 
 ## 4. Distribution & packaging (turn it into something installable)
 

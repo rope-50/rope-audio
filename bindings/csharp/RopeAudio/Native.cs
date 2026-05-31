@@ -134,6 +134,7 @@ namespace Rope
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_voice_gain(IntPtr engine, ulong voice, float gain);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_voice_pan(IntPtr engine, ulong voice, float pan);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_voice_pitch(IntPtr engine, ulong voice, float pitch);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_voice_lowpass(IntPtr engine, ulong voice, float cutoffHz);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_master_volume(IntPtr engine, float gain);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern float rope_get_master_volume(IntPtr engine);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_bus_volume(IntPtr engine, RopeBus bus, float gain);

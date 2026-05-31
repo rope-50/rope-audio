@@ -164,6 +164,7 @@ Done in v0.1:
 - [x] Category buses (SFX / Music / UI) with smoothed group volume + mute/solo
 - [x] WAV / FLAC / MP3 / OGG decoding (format auto-detected from the data)
 - [x] Sample-accurate scheduling (start voices at an absolute frame on the sample clock)
+- [x] Per-voice low-pass filter (muffling for distance / occlusion / underwater)
 
 Next:
 - [ ] Higher-quality resampling (windowed-sinc)

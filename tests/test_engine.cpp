@@ -458,6 +458,55 @@ TEST(Scheduling, PendingVoiceIsSilentThenPlays) {
     EXPECT_NEAR(big[(500 - 100) * 2], 0.5f, 0.02f);          // audible from abs 500
 }
 
+TEST(Filter, LowpassAttenuatesHighFrequencies) {
+    // Nyquist-frequency signal: alternating +/-0.5 each sample.
+    std::vector<float> alt(4000);
+    for (std::size_t i = 0; i < alt.size(); ++i) alt[i] = (i % 2 == 0) ? 0.5f : -0.5f;
+    auto wav = test::makeWavPcm16(1, 48000, alt);
+
+    auto measure = [&](float cutoffHz) {
+        AudioEngine e;
+        e.start(48000, 0, BackendType::Null);
+        auto s = e.loadWavMemory(wav.data(), wav.size());
+        e.play(s, PlayParams{.pan = -1.0f, .lowpassHz = cutoffHz});
+        std::vector<float> out(1000 * 2, 0.0f);
+        e.renderOffline(out.data(), 1000);
+        return energy(out);
+    };
+
+    const float refEnergy  = measure(0.0f);     // filter off
+    const float filtEnergy = measure(200.0f);   // strong low-pass
+    EXPECT_GT(refEnergy, 0.0f);
+    EXPECT_LT(filtEnergy, refEnergy * 0.25f);   // high frequencies strongly cut
+}
+
+TEST(Filter, LowpassPassesLowFrequencies) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);    // DC / constant signal
+    e.play(s, PlayParams{.pan = -1.0f, .lowpassHz = 200.0f});
+    std::vector<float> out(2000 * 2, 0.0f);
+    e.renderOffline(out.data(), 2000);
+    EXPECT_NEAR(out[1900 * 2], 0.5f, 0.02f);    // DC passes once the filter settles
+}
+
+TEST(Filter, LiveLowpassMuffles) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    std::vector<float> alt(8000);
+    for (std::size_t i = 0; i < alt.size(); ++i) alt[i] = (i % 2 == 0) ? 0.5f : -0.5f;
+    auto wav = test::makeWavPcm16(1, 48000, alt);
+    auto s = e.loadWavMemory(wav.data(), wav.size());
+
+    auto v = e.play(s, PlayParams{.pan = -1.0f});      // unfiltered
+    std::vector<float> open(500 * 2, 0.0f);
+    e.renderOffline(open.data(), 500);
+    e.setVoiceLowpass(v, 150.0f);                      // muffle live
+    std::vector<float> muffled(500 * 2, 0.0f);
+    e.renderOffline(muffled.data(), 500);
+    EXPECT_LT(energy(muffled), energy(open) * 0.3f);
+}
+
 TEST(Buses, DefaultsToSfxAtUnityGain) {
     AudioEngine e;
     e.start(48000, 0, BackendType::Null);

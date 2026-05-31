@@ -36,6 +36,9 @@ struct PlayParams {
     float pitch  = 1.0f;  ///< speed/pitch ratio (1 = original, 2 = +1 octave, 0.5 = -1 octave)
     float fadeIn = 0.0f;  ///< fade-in time in seconds (0 = start at full gain)
     Bus   bus    = Bus::Sfx; ///< category bus this voice is routed through
+    /// One-pole low-pass cutoff in Hz for muffling (distance / occlusion /
+    /// underwater). 0 (default) or >= Nyquist disables the filter.
+    float lowpassHz = 0.0f;
     /// Absolute output-frame time at which the voice should start, on the
     /// engine's monotonic sample clock (see AudioEngine::currentFrame). 0 (the
     /// default) or any time already in the past means "start immediately". Use
@@ -148,6 +151,12 @@ public:
     /// Change a playing voice's pitch/speed ratio (no-op if it already finished).
     /// @return false if the command queue was full.
     bool setVoicePitch(VoiceHandle voice, float pitch);
+
+    /// Set a voice's one-pole low-pass cutoff in Hz (muffling). 0 or >= Nyquist
+    /// disables the filter. The filter state is continuous, so changes are
+    /// click-free (no-op if the voice already finished).
+    /// @return false if the command queue was full.
+    bool setVoiceLowpass(VoiceHandle voice, float cutoffHz);
 
     /// Set the master output gain applied to the whole mix.
     /// @return false if the command queue was full.
