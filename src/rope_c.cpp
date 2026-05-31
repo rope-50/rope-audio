@@ -167,10 +167,11 @@ rope_voice rope_play(rope_engine_t e, rope_sound s, const rope_play_params* p) {
         rope::PlayParams params;
         if (p) {
             if (!isFiniteF(p->gain) || !isFiniteF(p->pan)) return ROPE_INVALID_VOICE;
-            params.gain  = p->gain;
-            params.pan   = p->pan;
-            params.loop  = p->loop != 0;
-            params.pitch = (p->pitch > 0.0f) ? p->pitch : 1.0f; // 0/NaN -> neutral
+            params.gain   = p->gain;
+            params.pan    = p->pan;
+            params.loop   = p->loop != 0;
+            params.pitch  = (p->pitch > 0.0f) ? p->pitch : 1.0f;   // 0/NaN -> neutral
+            params.fadeIn = (p->fade_in > 0.0f) ? p->fade_in : 0.0f;
         }
         return e->engine.play(s, params);
     } catch (...) {
@@ -181,6 +182,13 @@ rope_voice rope_play(rope_engine_t e, rope_sound s, const rope_play_params* p) {
 rope_result rope_stop_voice(rope_engine_t e, rope_voice v) {
     if (!e) return ROPE_ERR_INVALID_ARGUMENT;
     try { return e->engine.stopVoice(v) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
+    catch (...) { return ROPE_ERR_UNKNOWN; }
+}
+
+rope_result rope_stop_voice_fade(rope_engine_t e, rope_voice v, float fade_seconds) {
+    if (!e) return ROPE_ERR_INVALID_ARGUMENT;
+    if (!(fade_seconds >= 0.0f)) fade_seconds = 0.0f;  // NaN/negative -> instant
+    try { return e->engine.stopVoice(v, fade_seconds) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
     catch (...) { return ROPE_ERR_UNKNOWN; }
 }
 

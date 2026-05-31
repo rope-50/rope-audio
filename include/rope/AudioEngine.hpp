@@ -22,10 +22,11 @@ inline constexpr VoiceHandle kInvalidVoice = 0;
 
 /// Per-voice playback options.
 struct PlayParams {
-    float gain  = 1.0f;  ///< linear gain multiplier
-    float pan   = 0.0f;  ///< -1 = full left, 0 = center, +1 = full right
-    bool  loop  = false; ///< restart from the top when the end is reached
-    float pitch = 1.0f;  ///< speed/pitch ratio (1 = original, 2 = +1 octave, 0.5 = -1 octave)
+    float gain   = 1.0f;  ///< linear gain multiplier
+    float pan    = 0.0f;  ///< -1 = full left, 0 = center, +1 = full right
+    bool  loop   = false; ///< restart from the top when the end is reached
+    float pitch  = 1.0f;  ///< speed/pitch ratio (1 = original, 2 = +1 octave, 0.5 = -1 octave)
+    float fadeIn = 0.0f;  ///< fade-in time in seconds (0 = start at full gain)
 };
 
 /// Reason a voice stopped (carried by Event::reason).
@@ -110,8 +111,11 @@ public:
     VoiceHandle play(SoundHandle sound, const PlayParams& params = {});
 
     /// Stop a specific voice (no-op if it already finished).
+    /// @param fadeOut fade-out time in seconds (0 = stop immediately). With a
+    ///                fade, the voice keeps playing while ramping to silence and
+    ///                emits VoiceFinished when the fade completes.
     /// @return false if the command queue was full (try again next frame).
-    bool stopVoice(VoiceHandle voice);
+    bool stopVoice(VoiceHandle voice, float fadeOut = 0.0f);
 
     /// Stop every currently-playing voice.
     /// @return false if the command queue was full.

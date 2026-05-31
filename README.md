@@ -156,9 +156,10 @@ Done in v0.1:
 - [x] Per-voice resampling (any source rate → device rate) + pitch control
 - [x] Live reclamation of unloaded sounds (memory bounded to live data, refcounted)
 - [x] Master-bus soft-clip limiter (prevents harsh clipping; toggleable)
+- [x] Per-voice fade in/out + gain/pan/master smoothing (anti-zipper)
 
 Next:
-- [ ] Per-voice fades + parameter smoothing (anti-zipper); higher-quality resampler
+- [ ] Higher-quality resampling (windowed-sinc)
 - [ ] Sample-accurate scheduling (start voices at an absolute frame time)
 - [ ] Category buses (SFX/Music/UI) with group volume
 - [ ] Mobile/desktop plugin glue beyond Windows (Android/iOS/macOS/Linux)

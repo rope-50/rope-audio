@@ -59,6 +59,29 @@ inline float softClip(float x) {
     return x < 0.0f ? -y : y;
 }
 
+constexpr float kSmoothSeconds = 0.005f;  // ~5 ms anti-zipper ramp for set* changes
+
+/// A linear parameter ramp (current -> target over N frames). Kills zipper
+/// noise on gain/pan/master changes and powers fade in/out. Advanced once per
+/// output frame on the audio thread.
+struct Ramp {
+    float current = 0.0f;
+    float target  = 0.0f;
+    float inc     = 0.0f;
+    int   frames  = 0;     // frames remaining
+    void jump(float v) { current = target = v; inc = 0.0f; frames = 0; }
+    void to(float t, int rampFrames) {
+        target = t;
+        if (rampFrames <= 0) { current = t; inc = 0.0f; frames = 0; }
+        else { inc = (t - current) / static_cast<float>(rampFrames); frames = rampFrames; }
+    }
+    float next() {        // value to use this frame, then advance
+        const float v = current;
+        if (frames > 0) { current += inc; if (--frames == 0) current = target; }
+        return v;
+    }
+};
+
 // --- Control -> audio thread messages --------------------------------------
 enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetPitch, SetMaster };
 
@@ -71,6 +94,7 @@ struct Command {
     float              panL   = kCenterPanGain;   // Play / SetPan (precomputed)
     float              panR   = kCenterPanGain;
     float              pitch  = 1.0f;             // Play / SetPitch
+    std::uint32_t      rampFrames = 0;            // Play fade-in / Stop fade-out / set* smoothing
     bool               loop   = false;
 };
 
@@ -120,13 +144,14 @@ private:
 struct Voice {
     const AudioBuffer* buffer    = nullptr;
     double             position  = 0.0;   // fractional source frame index (resampling)
-    float              gain      = 1.0f;
-    float              panL      = kCenterPanGain;
-    float              panR      = kCenterPanGain;
+    Ramp               gain;              // smoothed; powers fade in/out
+    Ramp               panL;
+    Ramp               panR;
     float              pitch     = 1.0f;
     std::uint32_t      soundSlot = 0;     // owning sound-bank index (for reclamation)
     bool               loop      = false;
     bool               active    = false;
+    bool               stopAtRampEnd = false; // fade-out: finish when gain ramp hits 0
     VoiceHandle        id        = kInvalidVoice;
 };
 
@@ -167,7 +192,7 @@ struct AudioEngine::Impl {
 
     // Voice pool — audio thread only.
     std::array<Voice, kMaxVoices> voices{};
-    float master = 1.0f;                          // audio thread only
+    Ramp master{1.0f, 1.0f, 0.0f, 0};             // audio thread only (smoothed)
     std::atomic<bool> limiterEnabled{true};       // master-bus soft clip
 
     // Control -> audio command channel + audio/control -> poll event channels.
@@ -217,12 +242,18 @@ struct AudioEngine::Impl {
                 }
                 slot->buffer    = cmd.buffer;
                 slot->position  = 0.0;
-                slot->gain      = cmd.gain;
-                slot->panL      = cmd.panL;   // precomputed on the control thread
-                slot->panR      = cmd.panR;
+                if (cmd.rampFrames > 0) {                 // fade-in: gain 0 -> target
+                    slot->gain.current = 0.0f;
+                    slot->gain.to(cmd.gain, static_cast<int>(cmd.rampFrames));
+                } else {
+                    slot->gain.jump(cmd.gain);
+                }
+                slot->panL.jump(cmd.panL);                // precomputed on the control thread
+                slot->panR.jump(cmd.panR);
                 slot->pitch     = cmd.pitch;
                 slot->soundSlot = cmd.soundSlot;
                 slot->loop      = cmd.loop;
+                slot->stopAtRampEnd = false;
                 slot->id        = cmd.voice;
                 slot->active    = true;
                 break;
@@ -230,7 +261,12 @@ struct AudioEngine::Impl {
             case CommandType::Stop:
                 for (Voice& v : voices) {
                     if (v.active && v.id == cmd.voice) {
-                        finish(v, VoiceEndReason::Stopped);
+                        if (cmd.rampFrames > 0) {       // fade out, then finish
+                            v.gain.to(0.0f, static_cast<int>(cmd.rampFrames));
+                            v.stopAtRampEnd = true;
+                        } else {
+                            finish(v, VoiceEndReason::Stopped);
+                        }
                         break;
                     }
                 }
@@ -242,13 +278,17 @@ struct AudioEngine::Impl {
                 break;
             case CommandType::SetGain:
                 for (Voice& v : voices) {
-                    if (v.active && v.id == cmd.voice) { v.gain = cmd.gain; break; }
+                    if (v.active && v.id == cmd.voice) {
+                        v.gain.to(cmd.gain, static_cast<int>(cmd.rampFrames)); break;
+                    }
                 }
                 break;
             case CommandType::SetPan:
                 for (Voice& v : voices) {
                     if (v.active && v.id == cmd.voice) {
-                        v.panL = cmd.panL; v.panR = cmd.panR; break;
+                        v.panL.to(cmd.panL, static_cast<int>(cmd.rampFrames));
+                        v.panR.to(cmd.panR, static_cast<int>(cmd.rampFrames));
+                        break;
                     }
                 }
                 break;
@@ -258,7 +298,7 @@ struct AudioEngine::Impl {
                 }
                 break;
             case CommandType::SetMaster:
-                master = cmd.gain;
+                master.to(cmd.gain, static_cast<int>(cmd.rampFrames));
                 break;
             }
         }
@@ -286,6 +326,10 @@ struct AudioEngine::Impl {
             const double step  = (static_cast<double>(buf.sampleRate) / denom) * v.pitch;
 
             for (unsigned int f = 0; f < nFrames; ++f) {
+                if (v.stopAtRampEnd && v.gain.frames == 0) { // fade-out complete
+                    finish(v, VoiceEndReason::Stopped);
+                    break;
+                }
                 if (v.position >= static_cast<double>(frames)) {
                     if (v.loop) {
                         do { v.position -= static_cast<double>(frames); }
@@ -307,23 +351,29 @@ struct AudioEngine::Impl {
                 const float  l = a[0] + (b[0] - a[0]) * frac;                  // mono / left
                 const float  r = (srcCh == 1) ? l : (a[1] + (b[1] - a[1]) * frac);
 
+                const float g  = v.gain.next();   // smoothed gain (and fades)
+                const float pl = v.panL.next();
+                const float pr = v.panR.next();
                 if (outCh == 1) {
-                    out[f] += 0.5f * (l * v.panL + r * v.panR) * v.gain; // downmix
+                    out[f] += 0.5f * (l * pl + r * pr) * g; // downmix
                 } else {
-                    out[f * outCh + 0] += l * v.gain * v.panL;
-                    out[f * outCh + 1] += r * v.gain * v.panR;
+                    out[f * outCh + 0] += l * g * pl;
+                    out[f * outCh + 1] += r * g * pr;
                 }
                 v.position += step;
             }
         }
 
-        // Master gain + optional soft-clip limiter over the summed output.
+        // Master gain (smoothed) + optional soft-clip limiter over the mix.
         const bool limit = limiterEnabled.load(std::memory_order_relaxed);
-        if (master != 1.0f || limit) {
-            const std::size_t total = static_cast<std::size_t>(nFrames) * outCh;
-            for (std::size_t i = 0; i < total; ++i) {
-                float s = out[i] * master;
-                out[i] = limit ? softClip(s) : s;
+        const bool masterActive = master.frames > 0 || master.current != 1.0f;
+        if (masterActive || limit) {
+            for (unsigned int f = 0; f < nFrames; ++f) {
+                const float m = master.next();
+                for (unsigned int c = 0; c < outCh; ++c) {
+                    float s = out[f * outCh + c] * m;
+                    out[f * outCh + c] = limit ? softClip(s) : s;
+                }
             }
         }
     }
@@ -350,6 +400,13 @@ struct AudioEngine::Impl {
                 }
             }
         }
+    }
+
+    // Convert a duration in seconds to a frame count at the current device rate.
+    std::uint32_t framesForSeconds(float seconds) const {
+        if (!(seconds > 0.0f)) return 0;
+        return static_cast<std::uint32_t>(
+            seconds * static_cast<float>(sampleRate.load(std::memory_order_relaxed)));
     }
 };
 
@@ -492,10 +549,11 @@ VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
     cmd.buffer    = s.buffer.get();
     cmd.voice     = id;
     cmd.soundSlot = sound;
-    cmd.gain      = params.gain;
+    cmd.gain       = params.gain;
     computePan(params.pan, cmd.panL, cmd.panR);   // off the audio thread
-    cmd.pitch     = clampPitch(params.pitch);
-    cmd.loop      = params.loop;
+    cmd.pitch      = clampPitch(params.pitch);
+    cmd.rampFrames = impl_->framesForSeconds(params.fadeIn);   // fade-in
+    cmd.loop       = params.loop;
 
     if (!impl_->pushCommand(cmd)) {
         std::fprintf(stderr, "[rope] command queue full; play() dropped\n");
@@ -505,11 +563,12 @@ VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
     return id;
 }
 
-bool AudioEngine::stopVoice(VoiceHandle voice) {
+bool AudioEngine::stopVoice(VoiceHandle voice, float fadeOut) {
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
     Command cmd;
-    cmd.type  = CommandType::Stop;
-    cmd.voice = voice;
+    cmd.type       = CommandType::Stop;
+    cmd.voice      = voice;
+    cmd.rampFrames = impl_->framesForSeconds(fadeOut);   // 0 = instant stop
     return impl_->pushCommand(cmd);
 }
 
@@ -523,18 +582,20 @@ bool AudioEngine::stopAll() {
 bool AudioEngine::setVoiceGain(VoiceHandle voice, float gain) {
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
     Command cmd;
-    cmd.type  = CommandType::SetGain;
-    cmd.voice = voice;
-    cmd.gain  = gain;
+    cmd.type       = CommandType::SetGain;
+    cmd.voice      = voice;
+    cmd.gain       = gain;
+    cmd.rampFrames = impl_->framesForSeconds(kSmoothSeconds);  // anti-zipper
     return impl_->pushCommand(cmd);
 }
 
 bool AudioEngine::setVoicePan(VoiceHandle voice, float pan) {
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
     Command cmd;
-    cmd.type  = CommandType::SetPan;
-    cmd.voice = voice;
+    cmd.type       = CommandType::SetPan;
+    cmd.voice      = voice;
     computePan(pan, cmd.panL, cmd.panR);          // off the audio thread
+    cmd.rampFrames = impl_->framesForSeconds(kSmoothSeconds);  // anti-zipper
     return impl_->pushCommand(cmd);
 }
 
@@ -551,8 +612,9 @@ bool AudioEngine::setMasterVolume(float gain) {
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
     impl_->masterShadow.store(gain, std::memory_order_relaxed);
     Command cmd;
-    cmd.type = CommandType::SetMaster;
-    cmd.gain = gain;
+    cmd.type       = CommandType::SetMaster;
+    cmd.gain       = gain;
+    cmd.rampFrames = impl_->framesForSeconds(kSmoothSeconds);  // anti-zipper
     return impl_->pushCommand(cmd);
 }
 

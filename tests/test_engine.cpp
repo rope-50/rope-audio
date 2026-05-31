@@ -89,14 +89,15 @@ TEST(Engine, CenterPanIsConstantPower) {
 TEST(Engine, GainAndMasterScaleOutput) {
     AudioEngine e;
     e.start(48000, 0, BackendType::Null);
-    auto s = loadConstMono(e, 0.8f, 1000);
+    auto s = loadConstMono(e, 0.8f, 100000);
     e.setMasterVolume(0.5f);
     e.play(s, PlayParams{.gain = 0.5f, .pan = -1.0f});
 
-    std::vector<float> out(64 * 2, 0.0f);
-    e.renderOffline(out.data(), 64);
-    // L = 0.8 * gain(0.5) * panL(1.0) * master(0.5) = 0.2
-    EXPECT_NEAR(out[0], 0.2f, 0.02f);
+    // Render past the master smoothing ramp (~5 ms = 240 frames) and check a
+    // settled frame: L = 0.8 * gain(0.5) * panL(1.0) * master(0.5) = 0.2.
+    std::vector<float> out(512 * 2, 0.0f);
+    e.renderOffline(out.data(), 512);
+    EXPECT_NEAR(out[500 * 2], 0.2f, 0.02f);
     EXPECT_FLOAT_EQ(e.masterVolume(), 0.5f);
 }
 
@@ -294,4 +295,59 @@ TEST(Master, LimiterTamesHotMixAndIsTransparentWhenOff) {
     std::fill(out.begin(), out.end(), 0.0f);
     e.renderOffline(out.data(), 64);
     EXPECT_GT(std::abs(out[0]), 1.0f);
+}
+
+TEST(Fades, FadeInRampsGainUp) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+    e.play(s, PlayParams{.pan = -1.0f, .fadeIn = 0.01f});  // 10 ms = 480 frames
+
+    std::vector<float> out(512 * 2, 0.0f);
+    e.renderOffline(out.data(), 512);
+    EXPECT_LT(std::abs(out[0]), 0.05f);         // starts near silence
+    EXPECT_NEAR(out[500 * 2], 0.5f, 0.05f);     // settles to full (src 0.5 * panL 1)
+}
+
+TEST(Fades, FadeOutStaysAudibleThenFinishes) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+    auto v = e.play(s, PlayParams{.pan = -1.0f});      // instant start, full
+
+    std::vector<float> out(64 * 2, 0.0f);
+    e.renderOffline(out.data(), 64);
+    EXPECT_GT(std::abs(out[0]), 0.3f);                 // playing
+    EXPECT_TRUE(e.stopVoice(v, 0.01f));                // 10 ms fade-out
+
+    std::fill(out.begin(), out.end(), 0.0f);
+    e.renderOffline(out.data(), 64);                   // 64 < 480: still fading
+    bool finishedEarly = false;
+    Event ev;
+    while (e.pollEvent(ev)) {
+        if (ev.type == EventType::VoiceFinished && ev.voice == v) finishedEarly = true;
+    }
+    EXPECT_FALSE(finishedEarly);                       // not done yet
+    EXPECT_GT(std::abs(out[0]), 0.0f);                 // still audible during fade
+
+    EXPECT_GT(renderUntilFinished(e, v, 64, 32), 0);   // fade completes -> finishes
+}
+
+TEST(Fades, SetVoiceGainSmoothsInsteadOfJumping) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+    auto v = e.play(s, PlayParams{.pan = -1.0f});
+
+    std::vector<float> out(8 * 2, 0.0f);
+    e.renderOffline(out.data(), 8);
+    e.setVoiceGain(v, 0.0f);                            // ramps to 0 over ~5 ms
+
+    std::fill(out.begin(), out.end(), 0.0f);
+    e.renderOffline(out.data(), 8);                     // 8 << 240: not silent yet
+    EXPECT_GT(std::abs(out[0]), 0.3f);                  // did not jump straight to 0
+
+    std::vector<float> settle(512 * 2, 0.0f);
+    e.renderOffline(settle.data(), 512);
+    EXPECT_NEAR(settle[500 * 2], 0.0f, 0.01f);          // now silent
 }

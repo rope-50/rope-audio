@@ -35,7 +35,7 @@ extern "C" {
 
 /* ---- Versioning ---------------------------------------------------------- */
 #define ROPE_ABI_VERSION_MAJOR 0u
-#define ROPE_ABI_VERSION_MINOR 3u
+#define ROPE_ABI_VERSION_MINOR 4u
 
 /* ---- Handles ------------------------------------------------------------- */
 typedef struct rope_engine* rope_engine_t; /* opaque; NULL = invalid */
@@ -100,7 +100,8 @@ typedef struct rope_play_params {
     float    pan;         /* -1 = left, 0 = center, +1 = right */
     int32_t  loop;        /* 0 = one-shot, non-zero = loop */
     float    pitch;       /* speed/pitch ratio, default 1.0 (<=0 is treated as 1.0) */
-    uint32_t _reserved[3];/* future: bus_id, start_offset, fade... */
+    float    fade_in;     /* fade-in seconds (0 = full gain at start) */
+    uint32_t _reserved[2];/* future: bus_id, start_offset... */
 } rope_play_params;
 
 typedef struct rope_event {
@@ -136,6 +137,8 @@ ROPE_API rope_result ROPE_CALL rope_unload_sound(rope_engine_t, rope_sound);
 /* ---- Playback ------------------------------------------------------------ */
 ROPE_API rope_voice  ROPE_CALL rope_play(rope_engine_t, rope_sound, const rope_play_params* /*NULL=defaults*/);
 ROPE_API rope_result ROPE_CALL rope_stop_voice(rope_engine_t, rope_voice);
+/* Stop a voice with a fade-out in seconds (0 behaves like rope_stop_voice). */
+ROPE_API rope_result ROPE_CALL rope_stop_voice_fade(rope_engine_t, rope_voice, float fade_seconds);
 ROPE_API rope_result ROPE_CALL rope_stop_all(rope_engine_t);
 
 /* ---- Live mix control ---------------------------------------------------- */

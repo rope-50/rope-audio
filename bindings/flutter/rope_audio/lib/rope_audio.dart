@@ -150,20 +150,30 @@ class RopeEngine {
       {double gain = 1.0,
       double pan = 0.0,
       bool loop = false,
-      double pitch = 1.0}) {
+      double pitch = 1.0,
+      double fadeIn = 0.0}) {
     final pp = calloc<RopePlayParamsNative>();
     try {
       pp.ref.gain = gain;
       pp.ref.pan = pan;
       pp.ref.loop = loop ? 1 : 0;
       pp.ref.pitch = pitch;
+      pp.ref.fadeIn = fadeIn;
       return _b.play(_engine, sound, pp);
     } finally {
       calloc.free(pp);
     }
   }
 
-  void stopVoice(int voice) => _b.stopVoice(_engine, voice);
+  /// Stop a voice, optionally fading out over [fadeOut] seconds.
+  void stopVoice(int voice, {double fadeOut = 0.0}) {
+    if (fadeOut > 0.0) {
+      _b.stopVoiceFade(_engine, voice, fadeOut);
+    } else {
+      _b.stopVoice(_engine, voice);
+    }
+  }
+
   void stopAll() => _b.stopAll(_engine);
 
   void setVoiceGain(int voice, double gain) =>

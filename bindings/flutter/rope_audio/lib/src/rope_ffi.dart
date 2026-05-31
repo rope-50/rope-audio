@@ -35,7 +35,9 @@ final class RopePlayParamsNative extends Struct {
   external int loop;
   @Float()
   external double pitch;
-  @Array(3)
+  @Float()
+  external double fadeIn;
+  @Array(2)
   external Array<Uint32> reserved;
 }
 
@@ -114,6 +116,10 @@ class RopeBindings {
         stopVoice = dl.lookupFunction<
             Int32 Function(Pointer<RopeEngineHandle>, Uint64),
             int Function(Pointer<RopeEngineHandle>, int)>('rope_stop_voice'),
+        stopVoiceFade = dl.lookupFunction<
+            Int32 Function(Pointer<RopeEngineHandle>, Uint64, Float),
+            int Function(Pointer<RopeEngineHandle>, int,
+                double)>('rope_stop_voice_fade'),
         stopAll =
             dl.lookupFunction<_I32EngineC, _I32EngineD>('rope_stop_all'),
         setVoiceGain = dl.lookupFunction<
@@ -168,6 +174,7 @@ class RopeBindings {
   final int Function(
       Pointer<RopeEngineHandle>, int, Pointer<RopePlayParamsNative>) play;
   final int Function(Pointer<RopeEngineHandle>, int) stopVoice;
+  final int Function(Pointer<RopeEngineHandle>, int, double) stopVoiceFade;
   final int Function(Pointer<RopeEngineHandle>) stopAll;
   final int Function(Pointer<RopeEngineHandle>, int, double) setVoiceGain;
   final int Function(Pointer<RopeEngineHandle>, int, double) setVoicePan;
