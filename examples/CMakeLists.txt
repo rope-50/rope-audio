@@ -8,3 +8,7 @@ target_link_libraries(play_wav PRIVATE rope::audioengine)
 add_executable(rope_c_smoke rope_c_smoke.c)
 target_link_libraries(rope_c_smoke PRIVATE rope::audioengine)
 set_target_properties(rope_c_smoke PROPERTIES LINKER_LANGUAGE CXX)
+
+# Headless mixer throughput benchmark (Null backend; linear vs sinc, 1..64 voices).
+add_executable(rope_bench rope_bench.cpp)
+target_link_libraries(rope_bench PRIVATE rope::audioengine)

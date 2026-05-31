@@ -111,10 +111,12 @@ serves pure-GDScript users.
 
 ## 5. Quality, docs & polish
 
-- [ ] **Benchmarks**: mix throughput / per-callback CPU at N voices; latency
-      numbers per backend.
-- [ ] **Stress/soak test**: many concurrent plays + load/unload churn under the
-      Null backend (catch leaks / queue overflows / reclamation bugs).
+- [x] **Benchmarks**: headless mixer throughput at N voices, linear vs sinc
+      (`examples/rope_bench.cpp`). *(Per-backend device latency numbers still
+      need real hardware — open.)*
+- [x] **Stress/soak test**: randomized play/load/unload churn + voice-pool
+      overload under the Null backend — asserts finite output, graceful
+      exhaustion, and leak-free reclamation (soundCount()==0). Runs in CI.
 - [ ] **API reference docs** (Doxygen for C/C++, dartdoc, XML docs for C#).
 - [ ] A short **demo video / GIF** of the Flame example for the README and pub.
 - [ ] `LICENSE` confirmed + third-party attributions (dr_wav, miniaudio, RtAudio).

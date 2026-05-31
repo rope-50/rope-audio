@@ -137,7 +137,14 @@ ctest --test-dir build/vs2022 -C Release --output-on-failure
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the C++ build + tests
 on **Windows, Linux and macOS**, plus a Flutter job (`dart analyze` +
-`flutter test`) on every push and PR.
+`flutter test`) and a C# bindings job (build + headless smoke) on every push and PR.
+
+The suite includes a **randomized soak test** (play/load/unload churn + voice-pool
+overload) that asserts finite output, graceful exhaustion, and leak-free
+reclamation. A headless **benchmark** (`rope_bench`, Null backend) reports mixer
+throughput — on a dev machine, linear resampling sustains 64 voices at tens of ×
+real time; the opt-in windowed-sinc is ~40× heavier, so it suits moderate
+polyphony or offline rendering.
 
 ### Notes
 

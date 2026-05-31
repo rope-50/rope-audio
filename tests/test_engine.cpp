@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -628,4 +629,79 @@ TEST(Buses, SoloLeavesOnlySoloedAudible) {
     e.renderOffline(out2.data(), 512);
     EXPECT_NEAR(out2[500 * 2 + 0], 0.5f, 0.02f);
     EXPECT_NEAR(out2[500 * 2 + 1], 0.5f, 0.02f);
+}
+
+TEST(Soak, VoicePoolOverloadIsGraceful) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+    for (int i = 0; i < 300; ++i) e.play(s, PlayParams{.gain = 0.3f}); // >> 64-voice pool
+
+    int exhausted = 0;
+    std::vector<float> out(128 * 2, 0.0f);
+    for (int blk = 0; blk < 10; ++blk) {
+        e.renderOffline(out.data(), 128);
+        for (float x : out) ASSERT_TRUE(std::isfinite(x));   // mix never blows up
+        Event ev;
+        while (e.pollEvent(ev)) {
+            if (ev.type == EventType::VoicesExhausted) ++exhausted;
+        }
+    }
+    EXPECT_GT(exhausted, 0);   // overflow is reported, not silently mishandled
+}
+
+TEST(Soak, RandomizedChurnStaysStableAndLeakFree) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    std::mt19937 rng(1234567u);   // fixed seed -> deterministic
+
+    std::vector<SoundHandle> live;
+    std::vector<float> out(256 * 2, 0.0f);
+
+    auto makeSound = [&]() {
+        const int frames = 50 + static_cast<int>(rng() % 2000);
+        const float amp  = 0.1f + static_cast<float>(rng() % 100) / 200.0f;
+        return loadConstMono(e, amp, frames);
+    };
+
+    for (int iter = 0; iter < 4000; ++iter) {
+        const unsigned op = rng() % 6u;
+        if (op == 0 || live.empty()) {                       // load
+            const SoundHandle s = makeSound();
+            if (s != kInvalidSound) live.push_back(s);
+        } else if (op == 1 || op == 2) {                     // play (sometimes a burst)
+            const SoundHandle s = live[rng() % live.size()];
+            const int burst = 1 + static_cast<int>(rng() % 4);
+            for (int b = 0; b < burst; ++b) {
+                e.play(s, PlayParams{.gain  = 0.4f,
+                                     .pan   = -1.0f + static_cast<float>(rng() % 200) / 100.0f,
+                                     .pitch = 0.5f + static_cast<float>(rng() % 300) / 100.0f});
+            }
+        } else if (op == 3) {                                // unload a live sound
+            const std::size_t i = rng() % live.size();
+            e.unloadSound(live[i]);
+            live.erase(live.begin() + static_cast<std::ptrdiff_t>(i));
+        } else if (op == 4) {                                // toggle global state
+            e.setResampleQuality((rng() & 1u) ? ResampleQuality::Sinc
+                                              : ResampleQuality::Linear);
+            e.setMasterVolume(0.2f + static_cast<float>(rng() % 100) / 100.0f);
+        } else {                                             // render + drain
+            const unsigned n = 64u + (rng() % 192u);
+            e.renderOffline(out.data(), n);
+            for (unsigned i = 0; i < n * 2; ++i) ASSERT_TRUE(std::isfinite(out[i]));
+            Event ev;
+            while (e.pollEvent(ev)) { /* drain */ }
+        }
+    }
+
+    // Leak check: unload everything, flush voices, and confirm live reclamation
+    // emptied the bank (no buffer left holding decoded data).
+    for (const SoundHandle s : live) e.unloadSound(s);
+    e.stopAll();
+    for (int i = 0; i < 300; ++i) {
+        e.renderOffline(out.data(), 256);
+        Event ev;
+        while (e.pollEvent(ev)) {}
+    }
+    EXPECT_EQ(e.soundCount(), 0u);
 }
