@@ -158,6 +158,18 @@ class RopeBindings {
             Float Function(Pointer<RopeEngineHandle>, Int32),
             double Function(
                 Pointer<RopeEngineHandle>, int)>('rope_get_bus_volume'),
+        setBusMuted = dl.lookupFunction<
+            Int32 Function(Pointer<RopeEngineHandle>, Int32, Int32),
+            int Function(Pointer<RopeEngineHandle>, int, int)>('rope_set_bus_muted'),
+        getBusMuted = dl.lookupFunction<
+            Int32 Function(Pointer<RopeEngineHandle>, Int32),
+            int Function(Pointer<RopeEngineHandle>, int)>('rope_get_bus_muted'),
+        setBusSoloed = dl.lookupFunction<
+            Int32 Function(Pointer<RopeEngineHandle>, Int32, Int32),
+            int Function(Pointer<RopeEngineHandle>, int, int)>('rope_set_bus_soloed'),
+        getBusSoloed = dl.lookupFunction<
+            Int32 Function(Pointer<RopeEngineHandle>, Int32),
+            int Function(Pointer<RopeEngineHandle>, int)>('rope_get_bus_soloed'),
         setMasterLimiter = dl.lookupFunction<
             Void Function(Pointer<RopeEngineHandle>, Int32),
             void Function(
@@ -204,6 +216,10 @@ class RopeBindings {
   final double Function(Pointer<RopeEngineHandle>) getMasterVolume;
   final int Function(Pointer<RopeEngineHandle>, int, double) setBusVolume;
   final double Function(Pointer<RopeEngineHandle>, int) getBusVolume;
+  final int Function(Pointer<RopeEngineHandle>, int, int) setBusMuted;
+  final int Function(Pointer<RopeEngineHandle>, int) getBusMuted;
+  final int Function(Pointer<RopeEngineHandle>, int, int) setBusSoloed;
+  final int Function(Pointer<RopeEngineHandle>, int) getBusSoloed;
   final void Function(Pointer<RopeEngineHandle>, int) setMasterLimiter;
   final int Function(Pointer<RopeEngineHandle>) getMasterLimiter;
   final int Function(Pointer<RopeEngineHandle>) engineSuspend;

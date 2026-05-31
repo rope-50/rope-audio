@@ -138,6 +138,10 @@ namespace Rope
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern float rope_get_master_volume(IntPtr engine);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_bus_volume(IntPtr engine, RopeBus bus, float gain);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern float rope_get_bus_volume(IntPtr engine, RopeBus bus);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_bus_muted(IntPtr engine, RopeBus bus, int muted);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern int rope_get_bus_muted(IntPtr engine, RopeBus bus);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern RopeResult rope_set_bus_soloed(IntPtr engine, RopeBus bus, int soloed);
+        [DllImport(Lib, CallingConvention = Cdecl)] public static extern int rope_get_bus_soloed(IntPtr engine, RopeBus bus);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern void rope_set_master_limiter(IntPtr engine, int enabled);
         [DllImport(Lib, CallingConvention = Cdecl)] public static extern int rope_get_master_limiter(IntPtr engine);
 

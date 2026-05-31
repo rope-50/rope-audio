@@ -204,6 +204,16 @@ class RopeEngine {
       _b.setBusVolume(_engine, bus.index, gain);
   double busVolume(RopeBus bus) => _b.getBusVolume(_engine, bus.index);
 
+  /// Mute/unmute a bus (smoothed). A muted bus is silent regardless of volume.
+  void setBusMuted(RopeBus bus, bool muted) =>
+      _b.setBusMuted(_engine, bus.index, muted ? 1 : 0);
+  bool busMuted(RopeBus bus) => _b.getBusMuted(_engine, bus.index) != 0;
+
+  /// Solo/unsolo a bus (smoothed). While any bus is soloed, only soloed buses play.
+  void setBusSoloed(RopeBus bus, bool soloed) =>
+      _b.setBusSoloed(_engine, bus.index, soloed ? 1 : 0);
+  bool busSoloed(RopeBus bus) => _b.getBusSoloed(_engine, bus.index) != 0;
+
   /// Master-bus soft-clip limiter (on by default).
   set masterLimiterEnabled(bool enabled) =>
       _b.setMasterLimiter(_engine, enabled ? 1 : 0);

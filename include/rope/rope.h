@@ -35,7 +35,7 @@ extern "C" {
 
 /* ---- Versioning ---------------------------------------------------------- */
 #define ROPE_ABI_VERSION_MAJOR 0u
-#define ROPE_ABI_VERSION_MINOR 6u
+#define ROPE_ABI_VERSION_MINOR 7u
 
 /* ---- Handles ------------------------------------------------------------- */
 typedef struct rope_engine* rope_engine_t; /* opaque; NULL = invalid */
@@ -170,6 +170,12 @@ ROPE_API float       ROPE_CALL rope_get_master_volume(rope_engine_t);
 /* Category bus (SFX/Music/UI) group volume; smoothed (~5 ms). */
 ROPE_API rope_result ROPE_CALL rope_set_bus_volume(rope_engine_t, rope_bus, float gain);
 ROPE_API float       ROPE_CALL rope_get_bus_volume(rope_engine_t, rope_bus);
+/* Per-bus mute/solo (non-zero = on). While any bus is soloed, only soloed buses
+ * are audible; a muted bus is always silent. Smoothed (~5 ms). */
+ROPE_API rope_result ROPE_CALL rope_set_bus_muted(rope_engine_t, rope_bus, int32_t muted);
+ROPE_API int32_t     ROPE_CALL rope_get_bus_muted(rope_engine_t, rope_bus);
+ROPE_API rope_result ROPE_CALL rope_set_bus_soloed(rope_engine_t, rope_bus, int32_t soloed);
+ROPE_API int32_t     ROPE_CALL rope_get_bus_soloed(rope_engine_t, rope_bus);
 /* Master-bus soft-clip limiter (on by default; non-zero = enabled). */
 ROPE_API void        ROPE_CALL rope_set_master_limiter(rope_engine_t, int32_t enabled);
 ROPE_API int32_t     ROPE_CALL rope_get_master_limiter(rope_engine_t);

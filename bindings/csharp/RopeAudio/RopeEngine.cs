@@ -127,6 +127,16 @@ namespace Rope
             Native.rope_set_bus_volume(_engine, bus, gain);
         public float BusVolume(RopeBus bus) => Native.rope_get_bus_volume(_engine, bus);
 
+        /// <summary>Mute/unmute a bus (smoothed). A muted bus is silent regardless of volume.</summary>
+        public void SetBusMuted(RopeBus bus, bool muted) =>
+            Native.rope_set_bus_muted(_engine, bus, muted ? 1 : 0);
+        public bool BusMuted(RopeBus bus) => Native.rope_get_bus_muted(_engine, bus) != 0;
+
+        /// <summary>Solo/unsolo a bus (smoothed). While any bus is soloed, only soloed buses play.</summary>
+        public void SetBusSoloed(RopeBus bus, bool soloed) =>
+            Native.rope_set_bus_soloed(_engine, bus, soloed ? 1 : 0);
+        public bool BusSoloed(RopeBus bus) => Native.rope_get_bus_soloed(_engine, bus) != 0;
+
         /// <summary>Master-bus soft-clip limiter (on by default).</summary>
         public bool MasterLimiterEnabled
         {

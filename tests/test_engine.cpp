@@ -501,3 +501,39 @@ TEST(Buses, BusVolumeSmoothsInsteadOfJumping) {
     e.renderOffline(settle.data(), 512);
     EXPECT_NEAR(settle[500 * 2 + 1], 0.0f, 0.01f);     // now silent
 }
+
+TEST(Buses, MuteSilencesItsGroup) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+    e.play(s, PlayParams{.pan = -1.0f, .bus = Bus::Sfx});
+    e.play(s, PlayParams{.pan = 1.0f, .bus = Bus::Music});
+    e.setBusMuted(Bus::Music, true);
+    EXPECT_TRUE(e.busMuted(Bus::Music));
+
+    std::vector<float> out(512 * 2, 0.0f);
+    e.renderOffline(out.data(), 512);
+    EXPECT_NEAR(out[500 * 2 + 0], 0.5f, 0.02f);        // SFX still audible
+    EXPECT_NEAR(out[500 * 2 + 1], 0.0f, 0.01f);        // Music muted
+}
+
+TEST(Buses, SoloLeavesOnlySoloedAudible) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100000);
+    e.play(s, PlayParams{.pan = -1.0f, .bus = Bus::Sfx});
+    e.play(s, PlayParams{.pan = 1.0f, .bus = Bus::Music});
+
+    e.setBusSoloed(Bus::Sfx, true);
+    EXPECT_TRUE(e.busSoloed(Bus::Sfx));
+    std::vector<float> out(512 * 2, 0.0f);
+    e.renderOffline(out.data(), 512);
+    EXPECT_NEAR(out[500 * 2 + 0], 0.5f, 0.02f);        // soloed SFX audible
+    EXPECT_NEAR(out[500 * 2 + 1], 0.0f, 0.01f);        // Music silenced by solo
+
+    e.setBusSoloed(Bus::Sfx, false);                   // clearing solo restores both
+    std::vector<float> out2(512 * 2, 0.0f);
+    e.renderOffline(out2.data(), 512);
+    EXPECT_NEAR(out2[500 * 2 + 0], 0.5f, 0.02f);
+    EXPECT_NEAR(out2[500 * 2 + 1], 0.5f, 0.02f);
+}

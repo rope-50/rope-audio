@@ -84,7 +84,8 @@ struct Ramp {
 };
 
 // --- Control -> audio thread messages --------------------------------------
-enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetPitch, SetMaster, SetBus };
+enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetPitch, SetMaster,
+                         SetBus, SetBusMute, SetBusSolo };
 
 struct Command {
     CommandType        type{};
@@ -98,6 +99,7 @@ struct Command {
     std::uint32_t      rampFrames = 0;            // Play fade-in / Stop fade-out / set* smoothing
     std::uint32_t      bus    = 0;                // Play / SetBus (-> category bus index)
     std::uint64_t      startFrame = 0;            // Play: absolute start time on the sample clock
+    bool               flag   = false;            // SetBusMute / SetBusSolo value
     bool               loop   = false;
 };
 
@@ -214,11 +216,38 @@ struct AudioEngine::Impl {
     std::array<std::vector<float>, kBusCount> busBlock{};  // per-callback scratch
     std::array<std::atomic<float>, kBusCount> busShadow{}; // control-side mirror
 
+    // Per-bus mute/solo. busMuted/busSoloed are the audio-thread truth (set via
+    // command); busAudible is the smoothed 0..1 factor folded into the bus gain;
+    // the *Shadow atomics back the control-thread getters.
+    std::array<bool, kBusCount>              busMuted{};
+    std::array<bool, kBusCount>              busSoloed{};
+    std::array<Ramp, kBusCount>              busAudible{}; // audio thread only
+    std::array<std::atomic<bool>, kBusCount> busMuteShadow{};
+    std::array<std::atomic<bool>, kBusCount> busSoloShadow{};
+
     Impl() {
         for (std::size_t i = 0; i < kBusCount; ++i) {
             busGain[i].jump(1.0f);
+            busAudible[i].jump(1.0f);
             busShadow[i].store(1.0f, std::memory_order_relaxed);
+            busMuteShadow[i].store(false, std::memory_order_relaxed);
+            busSoloShadow[i].store(false, std::memory_order_relaxed);
             busBlock[i].assign(kBusBlockPrealloc, 1.0f);  // preallocate (RT-safe steady state)
+        }
+    }
+
+    // Recompute each bus's audible factor (audio thread) after a mute/solo change.
+    // DAW-style solo: while any bus is soloed, only soloed buses pass; a muted bus
+    // is always silent. Smoothed over rampFrames to avoid clicks.
+    void recomputeAudible(int rampFrames) {
+        bool anySolo = false;
+        for (std::size_t b = 0; b < kBusCount; ++b)
+            if (busSoloed[b]) { anySolo = true; break; }
+        for (std::size_t b = 0; b < kBusCount; ++b) {
+            const float target = busMuted[b]                 ? 0.0f
+                               : (anySolo && !busSoloed[b])  ? 0.0f
+                                                             : 1.0f;
+            busAudible[b].to(target, rampFrames);
         }
     }
 
@@ -333,6 +362,18 @@ struct AudioEngine::Impl {
                 if (cmd.bus < kBusCount)
                     busGain[cmd.bus].to(cmd.gain, static_cast<int>(cmd.rampFrames));
                 break;
+            case CommandType::SetBusMute:
+                if (cmd.bus < kBusCount) {
+                    busMuted[cmd.bus] = cmd.flag;
+                    recomputeAudible(static_cast<int>(cmd.rampFrames));
+                }
+                break;
+            case CommandType::SetBusSolo:
+                if (cmd.bus < kBusCount) {
+                    busSoloed[cmd.bus] = cmd.flag;
+                    recomputeAudible(static_cast<int>(cmd.rampFrames));
+                }
+                break;
             }
         }
     }
@@ -350,7 +391,8 @@ struct AudioEngine::Impl {
         for (std::size_t b = 0; b < kBusCount; ++b) {
             if (busBlock[b].size() < nFrames) busBlock[b].resize(nFrames); // offline overflow only
             float* bg = busBlock[b].data();
-            for (unsigned int f = 0; f < nFrames; ++f) bg[f] = busGain[b].next();
+            for (unsigned int f = 0; f < nFrames; ++f)
+                bg[f] = busGain[b].next() * busAudible[b].next();   // volume * mute/solo
         }
 
         for (Voice& v : voices) {
@@ -704,6 +746,44 @@ float AudioEngine::busVolume(Bus bus) const noexcept {
     const std::size_t idx = static_cast<std::size_t>(bus);
     if (idx >= kBusCount) return 0.0f;
     return impl_->busShadow[idx].load(std::memory_order_relaxed);
+}
+
+bool AudioEngine::setBusMuted(Bus bus, bool muted) {
+    const std::size_t idx = static_cast<std::size_t>(bus);
+    if (idx >= kBusCount) return false;
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    impl_->busMuteShadow[idx].store(muted, std::memory_order_relaxed);
+    Command cmd;
+    cmd.type       = CommandType::SetBusMute;
+    cmd.bus        = static_cast<std::uint32_t>(idx);
+    cmd.flag       = muted;
+    cmd.rampFrames = impl_->framesForSeconds(kSmoothSeconds);  // anti-click
+    return impl_->pushCommand(cmd);
+}
+
+bool AudioEngine::busMuted(Bus bus) const noexcept {
+    const std::size_t idx = static_cast<std::size_t>(bus);
+    if (idx >= kBusCount) return false;
+    return impl_->busMuteShadow[idx].load(std::memory_order_relaxed);
+}
+
+bool AudioEngine::setBusSoloed(Bus bus, bool soloed) {
+    const std::size_t idx = static_cast<std::size_t>(bus);
+    if (idx >= kBusCount) return false;
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    impl_->busSoloShadow[idx].store(soloed, std::memory_order_relaxed);
+    Command cmd;
+    cmd.type       = CommandType::SetBusSolo;
+    cmd.bus        = static_cast<std::uint32_t>(idx);
+    cmd.flag       = soloed;
+    cmd.rampFrames = impl_->framesForSeconds(kSmoothSeconds);  // anti-click
+    return impl_->pushCommand(cmd);
+}
+
+bool AudioEngine::busSoloed(Bus bus) const noexcept {
+    const std::size_t idx = static_cast<std::size_t>(bus);
+    if (idx >= kBusCount) return false;
+    return impl_->busSoloShadow[idx].load(std::memory_order_relaxed);
 }
 
 void AudioEngine::setMasterLimiterEnabled(bool enabled) {

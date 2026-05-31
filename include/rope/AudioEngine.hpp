@@ -163,6 +163,18 @@ public:
 
     [[nodiscard]] float busVolume(Bus bus) const noexcept;
 
+    /// Mute/unmute a category bus. A muted bus is silent regardless of its
+    /// volume. Smoothed (~5 ms) to avoid clicks.
+    /// @return false if the command queue was full.
+    bool setBusMuted(Bus bus, bool muted);
+    [[nodiscard]] bool busMuted(Bus bus) const noexcept;
+
+    /// Solo/unsolo a category bus. While any bus is soloed, only soloed buses
+    /// are audible (a muted bus stays silent even if soloed). Smoothed (~5 ms).
+    /// @return false if the command queue was full.
+    bool setBusSoloed(Bus bus, bool soloed);
+    [[nodiscard]] bool busSoloed(Bus bus) const noexcept;
+
     /// Enable/disable the master-bus soft-clip limiter (on by default).
     /// Transparent below ~0.7, then smoothly limits peaks to +-1.0 — prevents
     /// harsh digital clipping when many voices sum hot.

@@ -161,7 +161,7 @@ Done in v0.1:
 - [x] Master-bus soft-clip limiter (prevents harsh clipping; toggleable)
 - [x] Per-voice fade in/out + gain/pan/master smoothing (anti-zipper)
 - [x] Unity / Godot **C# (P/Invoke) bindings** + idiomatic wrapper (headless smoke in CI)
-- [x] Category buses (SFX / Music / UI) with smoothed group volume
+- [x] Category buses (SFX / Music / UI) with smoothed group volume + mute/solo
 - [x] WAV / FLAC / MP3 / OGG decoding (format auto-detected from the data)
 - [x] Sample-accurate scheduling (start voices at an absolute frame on the sample clock)
 

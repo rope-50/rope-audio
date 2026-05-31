@@ -275,6 +275,30 @@ float rope_get_bus_volume(rope_engine_t e, rope_bus bus) {
     catch (...) { return 0.0f; }
 }
 
+rope_result rope_set_bus_muted(rope_engine_t e, rope_bus bus, int32_t muted) {
+    if (!e) return ROPE_ERR_INVALID_ARGUMENT;
+    try { return e->engine.setBusMuted(mapBus(bus), muted != 0) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
+    catch (...) { return ROPE_ERR_UNKNOWN; }
+}
+
+int32_t rope_get_bus_muted(rope_engine_t e, rope_bus bus) {
+    if (!e) return 0;
+    try { return e->engine.busMuted(mapBus(bus)) ? 1 : 0; }
+    catch (...) { return 0; }
+}
+
+rope_result rope_set_bus_soloed(rope_engine_t e, rope_bus bus, int32_t soloed) {
+    if (!e) return ROPE_ERR_INVALID_ARGUMENT;
+    try { return e->engine.setBusSoloed(mapBus(bus), soloed != 0) ? ROPE_OK : ROPE_ERR_QUEUE_FULL; }
+    catch (...) { return ROPE_ERR_UNKNOWN; }
+}
+
+int32_t rope_get_bus_soloed(rope_engine_t e, rope_bus bus) {
+    if (!e) return 0;
+    try { return e->engine.busSoloed(mapBus(bus)) ? 1 : 0; }
+    catch (...) { return 0; }
+}
+
 void rope_set_master_limiter(rope_engine_t e, int32_t enabled) {
     if (!e) return;
     try { e->engine.setMasterLimiterEnabled(enabled != 0); } catch (...) {}

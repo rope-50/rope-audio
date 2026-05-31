@@ -83,8 +83,8 @@ serves pure-GDScript users.
       monotonic sample clock (`currentFrame()` + `PlayParams.startFrame` /
       `rope_play_scheduled`); voices begin at the exact mid-block frame.
 - [x] **Category buses** (SFX / Music / UI) with smoothed per-group volume
-      (voice → bus → master → limiter; RT-safe precomputed per-frame bus gain).
-      *Sub-item still open: per-bus mute/solo.*
+      + per-bus mute/solo (DAW-style; smoothed) — voice → bus → master → limiter,
+      RT-safe precomputed per-frame bus gain.
 - [ ] **Device-changed / auto-reroute** events (miniaudio device-notification
       plumbing) + host re-query of rate/channels.
 - [x] **OGG/FLAC/MP3 decoding** (dr_libs / stb_vorbis) beyond WAV — format
