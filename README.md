@@ -1,5 +1,7 @@
 # rope-audioengine
 
+[![CI](https://github.com/rope-50/rope-audio/actions/workflows/ci.yml/badge.svg)](https://github.com/rope-50/rope-audio/actions/workflows/ci.yml)
+
 A modern C++ (C++20) real-time audio engine for **games**. It opens a single
 output stream and mixes any number of simultaneously-playing mono/stereo WAV
 voices on a real-time audio thread, with per-voice gain/pan and a poll-based
