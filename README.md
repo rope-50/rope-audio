@@ -155,9 +155,9 @@ Done in v0.1:
 - [x] Headless offline rendering (Null backend) + GoogleTest suite + CI
 - [x] Per-voice resampling (any source rate → device rate) + pitch control
 - [x] Live reclamation of unloaded sounds (memory bounded to live data, refcounted)
+- [x] Master-bus soft-clip limiter (prevents harsh clipping; toggleable)
 
 Next:
-- [ ] Master limiter / soft-clip on the mix bus
 - [ ] Per-voice fades + parameter smoothing (anti-zipper); higher-quality resampler
 - [ ] Sample-accurate scheduling (start voices at an absolute frame time)
 - [ ] Category buses (SFX/Music/UI) with group volume

@@ -176,6 +176,11 @@ class RopeEngine {
   set masterVolume(double gain) => _b.setMasterVolume(_engine, gain);
   double get masterVolume => _b.getMasterVolume(_engine);
 
+  /// Master-bus soft-clip limiter (on by default).
+  set masterLimiterEnabled(bool enabled) =>
+      _b.setMasterLimiter(_engine, enabled ? 1 : 0);
+  bool get masterLimiterEnabled => _b.getMasterLimiter(_engine) != 0;
+
   void suspend() => _b.engineSuspend(_engine);
   void resume() => _b.engineResume(_engine);
 

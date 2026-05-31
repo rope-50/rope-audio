@@ -134,6 +134,12 @@ class RopeBindings {
                 Pointer<RopeEngineHandle>, double)>('rope_set_master_volume'),
         getMasterVolume = dl.lookupFunction<_F32EngineC, _F32EngineD>(
             'rope_get_master_volume'),
+        setMasterLimiter = dl.lookupFunction<
+            Void Function(Pointer<RopeEngineHandle>, Int32),
+            void Function(
+                Pointer<RopeEngineHandle>, int)>('rope_set_master_limiter'),
+        getMasterLimiter = dl.lookupFunction<_I32EngineC, _I32EngineD>(
+            'rope_get_master_limiter'),
         engineSuspend = dl
             .lookupFunction<_I32EngineC, _I32EngineD>('rope_engine_suspend'),
         engineResume =
@@ -168,6 +174,8 @@ class RopeBindings {
   final int Function(Pointer<RopeEngineHandle>, int, double) setVoicePitch;
   final int Function(Pointer<RopeEngineHandle>, double) setMasterVolume;
   final double Function(Pointer<RopeEngineHandle>) getMasterVolume;
+  final void Function(Pointer<RopeEngineHandle>, int) setMasterLimiter;
+  final int Function(Pointer<RopeEngineHandle>) getMasterLimiter;
   final int Function(Pointer<RopeEngineHandle>) engineSuspend;
   final int Function(Pointer<RopeEngineHandle>) engineResume;
   final int Function(Pointer<RopeEngineHandle>, Pointer<RopeEventNative>)

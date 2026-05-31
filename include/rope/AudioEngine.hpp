@@ -137,6 +137,12 @@ public:
 
     [[nodiscard]] float masterVolume() const noexcept;
 
+    /// Enable/disable the master-bus soft-clip limiter (on by default).
+    /// Transparent below ~0.7, then smoothly limits peaks to +-1.0 — prevents
+    /// harsh digital clipping when many voices sum hot.
+    void setMasterLimiterEnabled(bool enabled);
+    [[nodiscard]] bool masterLimiterEnabled() const noexcept;
+
     // ---- Events (any thread) ----
 
     /// Retrieve the next pending engine event. Call repeatedly until it returns

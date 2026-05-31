@@ -220,6 +220,17 @@ float rope_get_master_volume(rope_engine_t e) {
     catch (...) { return 0.0f; }
 }
 
+void rope_set_master_limiter(rope_engine_t e, int32_t enabled) {
+    if (!e) return;
+    try { e->engine.setMasterLimiterEnabled(enabled != 0); } catch (...) {}
+}
+
+int32_t rope_get_master_limiter(rope_engine_t e) {
+    if (!e) return 0;
+    try { return e->engine.masterLimiterEnabled() ? 1 : 0; }
+    catch (...) { return 0; }
+}
+
 rope_result rope_engine_suspend(rope_engine_t e) {
     if (!e) return ROPE_ERR_INVALID_ARGUMENT;
     try { e->engine.suspend(); return ROPE_OK; }

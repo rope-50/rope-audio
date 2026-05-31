@@ -273,3 +273,25 @@ TEST(SoundBank, ReclamationBoundsLiveDataAcrossCycles) {
     // almost nothing stays resident (not 200 buffers).
     EXPECT_LE(e.soundCount(), 2u);
 }
+
+TEST(Master, LimiterTamesHotMixAndIsTransparentWhenOff) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    EXPECT_TRUE(e.masterLimiterEnabled());        // on by default
+    auto s = loadConstMono(e, 1.0f, 1000);        // full-scale source
+    for (int i = 0; i < 8; ++i) {                 // 8 loud voices -> sum >> 1.0
+        e.play(s, PlayParams{.gain = 1.0f, .pan = 0.0f});
+    }
+
+    std::vector<float> out(64 * 2, 0.0f);
+    e.renderOffline(out.data(), 64);
+    for (float x : out) EXPECT_LE(std::abs(x), 1.0f);  // soft-clipped to within +-1
+    EXPECT_GT(std::abs(out[0]), 0.7f);                 // and still loud (limiting engaged)
+
+    // With the limiter off, the same hot mix overshoots full-scale.
+    e.setMasterLimiterEnabled(false);
+    EXPECT_FALSE(e.masterLimiterEnabled());
+    std::fill(out.begin(), out.end(), 0.0f);
+    e.renderOffline(out.data(), 64);
+    EXPECT_GT(std::abs(out[0]), 1.0f);
+}

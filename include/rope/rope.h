@@ -35,7 +35,7 @@ extern "C" {
 
 /* ---- Versioning ---------------------------------------------------------- */
 #define ROPE_ABI_VERSION_MAJOR 0u
-#define ROPE_ABI_VERSION_MINOR 2u
+#define ROPE_ABI_VERSION_MINOR 3u
 
 /* ---- Handles ------------------------------------------------------------- */
 typedef struct rope_engine* rope_engine_t; /* opaque; NULL = invalid */
@@ -144,6 +144,9 @@ ROPE_API rope_result ROPE_CALL rope_set_voice_pan(rope_engine_t, rope_voice, flo
 ROPE_API rope_result ROPE_CALL rope_set_voice_pitch(rope_engine_t, rope_voice, float pitch);
 ROPE_API rope_result ROPE_CALL rope_set_master_volume(rope_engine_t, float gain);
 ROPE_API float       ROPE_CALL rope_get_master_volume(rope_engine_t);
+/* Master-bus soft-clip limiter (on by default; non-zero = enabled). */
+ROPE_API void        ROPE_CALL rope_set_master_limiter(rope_engine_t, int32_t enabled);
+ROPE_API int32_t     ROPE_CALL rope_get_master_limiter(rope_engine_t);
 
 /* ---- Mobile lifecycle ---------------------------------------------------- */
 ROPE_API rope_result ROPE_CALL rope_engine_suspend(rope_engine_t);

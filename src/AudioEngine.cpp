@@ -45,6 +45,20 @@ inline float clampPitch(float p) {
     return p;
 }
 
+constexpr float kSoftClipThreshold = 0.7f;
+
+/// Master-bus soft clipper: transparent below ±threshold, then a smooth knee
+/// that asymptotes to ±1.0 — prevents harsh digital clipping when many voices
+/// sum hot, without a hard edge. Stateless and RT-safe (tanh only on peaks).
+inline float softClip(float x) {
+    const float a = x < 0.0f ? -x : x;
+    if (a <= kSoftClipThreshold) return x;
+    const float t    = kSoftClipThreshold;
+    const float over = (a - t) / (1.0f - t);
+    const float y    = t + (1.0f - t) * std::tanh(over);
+    return x < 0.0f ? -y : y;
+}
+
 // --- Control -> audio thread messages --------------------------------------
 enum class CommandType { Play, Stop, StopAll, SetGain, SetPan, SetPitch, SetMaster };
 
@@ -154,6 +168,7 @@ struct AudioEngine::Impl {
     // Voice pool — audio thread only.
     std::array<Voice, kMaxVoices> voices{};
     float master = 1.0f;                          // audio thread only
+    std::atomic<bool> limiterEnabled{true};       // master-bus soft clip
 
     // Control -> audio command channel + audio/control -> poll event channels.
     SpscQueue<Command, kCommandQueueCap>      commands;
@@ -302,9 +317,14 @@ struct AudioEngine::Impl {
             }
         }
 
-        if (master != 1.0f) {
+        // Master gain + optional soft-clip limiter over the summed output.
+        const bool limit = limiterEnabled.load(std::memory_order_relaxed);
+        if (master != 1.0f || limit) {
             const std::size_t total = static_cast<std::size_t>(nFrames) * outCh;
-            for (std::size_t i = 0; i < total; ++i) out[i] *= master;
+            for (std::size_t i = 0; i < total; ++i) {
+                float s = out[i] * master;
+                out[i] = limit ? softClip(s) : s;
+            }
         }
     }
 
@@ -538,6 +558,14 @@ bool AudioEngine::setMasterVolume(float gain) {
 
 float AudioEngine::masterVolume() const noexcept {
     return impl_->masterShadow.load(std::memory_order_relaxed);
+}
+
+void AudioEngine::setMasterLimiterEnabled(bool enabled) {
+    impl_->limiterEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+bool AudioEngine::masterLimiterEnabled() const noexcept {
+    return impl_->limiterEnabled.load(std::memory_order_relaxed);
 }
 
 bool AudioEngine::pollEvent(Event& out) {
