@@ -17,6 +17,7 @@ constexpr std::size_t kMaxVoices            = 64;   ///< polyphony limit
 constexpr std::size_t kCommandQueueCap      = 256;  ///< pending control->audio commands
 constexpr std::size_t kEventQueueCap        = 256;  ///< pending audio->control events
 constexpr std::size_t kControlEventCap      = 16;   ///< pending control-origin events
+constexpr std::size_t kRetireQueueCap       = 512;  ///< pending voice-retire records
 constexpr unsigned int kDefaultSampleRate   = 48000;
 constexpr unsigned int kDefaultOutChannels  = 2;    ///< requested stereo output
 constexpr float        kCenterPanGain       = 0.70710678f; // cos(pi/4) = sin(pi/4)
@@ -51,6 +52,7 @@ struct Command {
     CommandType        type{};
     const AudioBuffer* buffer = nullptr;          // Play only
     VoiceHandle        voice  = kInvalidVoice;
+    std::uint32_t      soundSlot = 0;             // Play only (-> sound bank index)
     float              gain   = 1.0f;             // Play / SetGain / SetMaster
     float              panL   = kCenterPanGain;   // Play / SetPan (precomputed)
     float              panR   = kCenterPanGain;
@@ -102,15 +104,26 @@ private:
 
 /// A single playing instance. Owned and mutated exclusively by the audio thread.
 struct Voice {
-    const AudioBuffer* buffer   = nullptr;
-    double             position = 0.0;   // fractional source frame index (for resampling)
-    float              gain     = 1.0f;
-    float              panL     = kCenterPanGain;
-    float              panR     = kCenterPanGain;
-    float              pitch    = 1.0f;
-    bool               loop     = false;
-    bool               active   = false;
-    VoiceHandle        id       = kInvalidVoice;
+    const AudioBuffer* buffer    = nullptr;
+    double             position  = 0.0;   // fractional source frame index (resampling)
+    float              gain      = 1.0f;
+    float              panL      = kCenterPanGain;
+    float              panR      = kCenterPanGain;
+    float              pitch     = 1.0f;
+    std::uint32_t      soundSlot = 0;     // owning sound-bank index (for reclamation)
+    bool               loop      = false;
+    bool               active    = false;
+    VoiceHandle        id        = kInvalidVoice;
+};
+
+/// A sound-bank slot. The decoded buffer is kept alive while voices reference it
+/// (refCount) and freed once refCount reaches 0 after unloadSound (retired).
+/// Indices are stable and never reused, so a stale handle resolves to a freed
+/// slot and fails cleanly (no aliasing).
+struct SoundSlot {
+    std::unique_ptr<AudioBuffer> buffer;
+    std::uint32_t                refCount = 0;     // in-flight + playing voices
+    bool                         retired  = false; // unloadSound called
 };
 
 } // namespace
@@ -122,8 +135,8 @@ struct AudioEngine::Impl {
     std::unique_ptr<AudioBackend> backend;
 
     // Serializes ALL control-thread API calls so they may come from any thread.
-    // The audio thread never takes this mutex.
-    std::mutex controlMutex;
+    // The audio thread never takes this mutex. (mutable for const queries.)
+    mutable std::mutex controlMutex;
 
     // Cross-thread scalar state — atomic so the audio thread / queries read it
     // without the mutex and without UB.
@@ -136,18 +149,19 @@ struct AudioEngine::Impl {
 
     // Sound bank — control thread only (under controlMutex). unique_ptr gives
     // stable addresses so the audio thread can hold raw pointers into it safely.
-    std::vector<std::unique_ptr<AudioBuffer>> sounds;
-    // Retired-but-still-referenced buffers; freed on stop() (RT thread joined).
-    std::vector<std::unique_ptr<AudioBuffer>> retired;
+    std::vector<SoundSlot> sounds;
 
     // Voice pool — audio thread only.
     std::array<Voice, kMaxVoices> voices{};
     float master = 1.0f;                          // audio thread only
 
     // Control -> audio command channel + audio/control -> poll event channels.
-    SpscQueue<Command, kCommandQueueCap>     commands;
-    SpscQueue<EngineEvent, kEventQueueCap>   audioEvents;
-    SpscQueue<EngineEvent, kControlEventCap> controlEvents;
+    SpscQueue<Command, kCommandQueueCap>      commands;
+    SpscQueue<EngineEvent, kEventQueueCap>    audioEvents;
+    SpscQueue<EngineEvent, kControlEventCap>  controlEvents;
+    // audio -> control: a finished/dropped voice's owning sound slot, so the
+    // control thread can drop a refcount and reclaim retired buffers live.
+    SpscQueue<std::uint32_t, kRetireQueueCap> retireQueue;
     std::atomic<std::uint32_t> droppedEvents{0};
 
     std::atomic<VoiceHandle>   nextVoiceId{1};
@@ -161,6 +175,15 @@ struct AudioEngine::Impl {
         }
     }
 
+    // Deactivate a voice, notify the app, and hand its sound slot back to the
+    // control thread for refcount/reclamation. RT-safe (lock-free pushes).
+    void finish(Voice& v, VoiceEndReason reason) {
+        v.active = false;
+        pushEvent({EngineEvent::Kind::VoiceFinished, v.id,
+                   static_cast<std::uint32_t>(reason), 0});
+        retireQueue.push(v.soundSlot);   // best-effort; if dropped, reclaimed on stop()
+    }
+
     void drainCommands() {
         Command cmd;
         while (commands.pop(cmd)) {
@@ -171,37 +194,35 @@ struct AudioEngine::Impl {
                     if (!v.active) { slot = &v; break; }
                 }
                 if (!slot) {
+                    // Polyphony exhausted: the voice never starts, so release the
+                    // refcount that play() took for it.
                     pushEvent({EngineEvent::Kind::VoicesExhausted, kInvalidVoice, 0, 0});
+                    retireQueue.push(cmd.soundSlot);
                     break;
                 }
-                slot->buffer   = cmd.buffer;
-                slot->position = 0.0;
-                slot->gain     = cmd.gain;
-                slot->panL     = cmd.panL;   // precomputed on the control thread
-                slot->panR     = cmd.panR;
-                slot->pitch    = cmd.pitch;
-                slot->loop     = cmd.loop;
-                slot->id       = cmd.voice;
-                slot->active   = true;
+                slot->buffer    = cmd.buffer;
+                slot->position  = 0.0;
+                slot->gain      = cmd.gain;
+                slot->panL      = cmd.panL;   // precomputed on the control thread
+                slot->panR      = cmd.panR;
+                slot->pitch     = cmd.pitch;
+                slot->soundSlot = cmd.soundSlot;
+                slot->loop      = cmd.loop;
+                slot->id        = cmd.voice;
+                slot->active    = true;
                 break;
             }
             case CommandType::Stop:
                 for (Voice& v : voices) {
                     if (v.active && v.id == cmd.voice) {
-                        v.active = false;
-                        pushEvent({EngineEvent::Kind::VoiceFinished, v.id,
-                                   static_cast<std::uint32_t>(VoiceEndReason::Stopped), 0});
+                        finish(v, VoiceEndReason::Stopped);
                         break;
                     }
                 }
                 break;
             case CommandType::StopAll:
                 for (Voice& v : voices) {
-                    if (v.active) {
-                        v.active = false;
-                        pushEvent({EngineEvent::Kind::VoiceFinished, v.id,
-                                   static_cast<std::uint32_t>(VoiceEndReason::Stopped), 0});
-                    }
+                    if (v.active) finish(v, VoiceEndReason::Stopped);
                 }
                 break;
             case CommandType::SetGain:
@@ -255,9 +276,7 @@ struct AudioEngine::Impl {
                         do { v.position -= static_cast<double>(frames); }
                         while (v.position >= static_cast<double>(frames));
                     } else {
-                        v.active = false;
-                        pushEvent({EngineEvent::Kind::VoiceFinished, v.id,
-                                   static_cast<std::uint32_t>(VoiceEndReason::Natural), 0});
+                        finish(v, VoiceEndReason::Natural);
                         break;
                     }
                 }
@@ -296,6 +315,22 @@ struct AudioEngine::Impl {
     }
 
     bool pushCommand(const Command& cmd) { return commands.push(cmd); }
+
+    // ---- control thread (called under controlMutex) ----
+
+    // Process finished/dropped voices: drop the sound's refcount and free any
+    // retired buffer whose last voice has now gone. Bounds memory for the
+    // load/play/unload-per-level pattern (no waiting for stop()).
+    void reclaim() {
+        std::uint32_t slot;
+        while (retireQueue.pop(slot)) {
+            if (slot < sounds.size() && sounds[slot].refCount > 0) {
+                if (--sounds[slot].refCount == 0 && sounds[slot].retired) {
+                    sounds[slot].buffer.reset();
+                }
+            }
+        }
+    }
 };
 
 namespace {
@@ -365,7 +400,16 @@ void AudioEngine::stop() {
     impl_->backend.reset();
     impl_->running.store(false, std::memory_order_relaxed);
     impl_->suspended = false;
-    impl_->retired.clear();   // RT thread is joined; safe to free retired buffers
+
+    // The RT thread is joined: flush any in-flight commands (so a later start()
+    // can't replay a Play that points at a buffer we are about to free), drop
+    // pending retire records, and free every retired buffer (no voices remain).
+    Command c;          while (impl_->commands.pop(c)) {}
+    std::uint32_t slot; while (impl_->retireQueue.pop(slot)) {}
+    for (auto& s : impl_->sounds) {
+        s.refCount = 0;
+        if (s.retired) { s.buffer.reset(); s.retired = false; }
+    }
 }
 
 bool AudioEngine::isRunning() const noexcept {
@@ -380,7 +424,10 @@ SoundHandle AudioEngine::loadWav(const std::filesystem::path& path) {
     }
     // Any sample rate is fine: the mixer resamples each voice to the device rate.
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
-    impl_->sounds.push_back(std::make_unique<AudioBuffer>(std::move(*decoded)));
+    impl_->reclaim();
+    SoundSlot s;
+    s.buffer = std::make_unique<AudioBuffer>(std::move(*decoded));
+    impl_->sounds.push_back(std::move(s));
     return static_cast<SoundHandle>(impl_->sounds.size() - 1);
 }
 
@@ -392,40 +439,49 @@ SoundHandle AudioEngine::loadWavMemory(const void* data, std::size_t size) {
     }
     // Any sample rate is fine: the mixer resamples each voice to the device rate.
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
-    impl_->sounds.push_back(std::make_unique<AudioBuffer>(std::move(*decoded)));
+    impl_->reclaim();
+    SoundSlot s;
+    s.buffer = std::make_unique<AudioBuffer>(std::move(*decoded));
+    impl_->sounds.push_back(std::move(s));
     return static_cast<SoundHandle>(impl_->sounds.size() - 1);
 }
 
 bool AudioEngine::unloadSound(SoundHandle sound) {
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
-    if (sound >= impl_->sounds.size() || !impl_->sounds[sound]) return false;
-    // Move the buffer aside instead of freeing: voices may still reference it.
-    // It is reclaimed on stop(), when the audio thread is guaranteed joined.
-    impl_->retired.push_back(std::move(impl_->sounds[sound]));
-    impl_->sounds[sound].reset();
+    impl_->reclaim();
+    if (sound >= impl_->sounds.size()) return false;
+    SoundSlot& s = impl_->sounds[sound];
+    if (!s.buffer || s.retired) return false;
+    s.retired = true;                       // new play() on this handle now fails
+    if (s.refCount == 0) s.buffer.reset();  // not in use -> free the decoded data now
     return true;
 }
 
 VoiceHandle AudioEngine::play(SoundHandle sound, const PlayParams& params) {
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
-    if (sound >= impl_->sounds.size() || !impl_->sounds[sound]) return kInvalidVoice;
+    impl_->reclaim();
+    if (sound >= impl_->sounds.size()) return kInvalidVoice;
+    SoundSlot& s = impl_->sounds[sound];
+    if (!s.buffer || s.retired) return kInvalidVoice;
 
     const VoiceHandle id =
         impl_->nextVoiceId.fetch_add(1, std::memory_order_relaxed);
 
     Command cmd;
-    cmd.type   = CommandType::Play;
-    cmd.buffer = impl_->sounds[sound].get();
-    cmd.voice  = id;
-    cmd.gain   = params.gain;
+    cmd.type      = CommandType::Play;
+    cmd.buffer    = s.buffer.get();
+    cmd.voice     = id;
+    cmd.soundSlot = sound;
+    cmd.gain      = params.gain;
     computePan(params.pan, cmd.panL, cmd.panR);   // off the audio thread
-    cmd.pitch  = clampPitch(params.pitch);
-    cmd.loop   = params.loop;
+    cmd.pitch     = clampPitch(params.pitch);
+    cmd.loop      = params.loop;
 
     if (!impl_->pushCommand(cmd)) {
         std::fprintf(stderr, "[rope] command queue full; play() dropped\n");
         return kInvalidVoice;
     }
+    s.refCount += 1;   // a voice is now in flight for this sound (released on finish)
     return id;
 }
 
@@ -486,6 +542,7 @@ float AudioEngine::masterVolume() const noexcept {
 
 bool AudioEngine::pollEvent(Event& out) {
     std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    impl_->reclaim();
     EngineEvent e;
     // Control-origin events first (Suspended/Resumed).
     if (impl_->controlEvents.pop(e)) { out = translateEvent(e); return true; }
@@ -530,6 +587,13 @@ unsigned int AudioEngine::sampleRate() const noexcept {
 }
 unsigned int AudioEngine::outputChannels() const noexcept {
     return impl_->channels.load(std::memory_order_relaxed);
+}
+
+std::size_t AudioEngine::soundCount() const noexcept {
+    std::lock_guard<std::mutex> lock(impl_->controlMutex);
+    std::size_t n = 0;
+    for (const auto& s : impl_->sounds) if (s.buffer) ++n;
+    return n;
 }
 
 void AudioEngine::renderOffline(float* out, unsigned int nFrames) {

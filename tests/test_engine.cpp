@@ -219,3 +219,57 @@ TEST(Engine, ConstantSoundUnchangedByResampling) {
     EXPECT_NEAR(out[0], 0.5f * 0.70710678f, 0.02f);
     EXPECT_NEAR(out[1], 0.5f * 0.70710678f, 0.02f);
 }
+
+TEST(SoundBank, UnloadFreesIdleSoundImmediately) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 1000);
+    EXPECT_EQ(e.soundCount(), 1u);
+    EXPECT_TRUE(e.unloadSound(s));      // not playing -> data freed now
+    EXPECT_EQ(e.soundCount(), 0u);
+}
+
+TEST(SoundBank, RetiredSoundStaysAliveUntilVoiceEnds) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 100);   // short
+    auto v = e.play(s);
+
+    std::vector<float> out(16 * 2, 0.0f);
+    e.renderOffline(out.data(), 16);        // voice now playing
+    EXPECT_TRUE(e.unloadSound(s));          // retired, but a voice still plays it
+    EXPECT_EQ(e.soundCount(), 1u);          // buffer kept alive
+
+    int rendered = renderUntilFinished(e, v, 16, 64);
+    ASSERT_GT(rendered, 0);
+    Event ev;
+    while (e.pollEvent(ev)) {}              // drains events + reclaims
+    EXPECT_EQ(e.soundCount(), 0u);          // last voice gone -> freed
+}
+
+TEST(SoundBank, StaleHandleAfterUnloadFails) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    auto s = loadConstMono(e, 0.5f, 1000);
+    EXPECT_TRUE(e.unloadSound(s));
+    Event ev;
+    while (e.pollEvent(ev)) {}             // reclaim
+    EXPECT_EQ(e.play(s), kInvalidVoice);   // stale handle no longer resolves
+    EXPECT_FALSE(e.unloadSound(s));        // already retired/freed
+}
+
+TEST(SoundBank, ReclamationBoundsLiveDataAcrossCycles) {
+    AudioEngine e;
+    e.start(48000, 0, BackendType::Null);
+    for (int i = 0; i < 200; ++i) {
+        auto s = loadConstMono(e, 0.3f, 50);   // short one-shot
+        auto v = e.play(s);
+        renderUntilFinished(e, v, 16, 16);     // play to completion
+        e.unloadSound(s);                      // reclaims the just-finished voice
+        Event ev;
+        while (e.pollEvent(ev)) {}
+    }
+    // Despite 200 load/unload cycles, decoded data is reclaimed each time, so
+    // almost nothing stays resident (not 200 buffers).
+    EXPECT_LE(e.soundCount(), 2u);
+}

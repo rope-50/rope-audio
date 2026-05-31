@@ -4,6 +4,7 @@
 #include "rope/AudioBuffer.hpp"
 #include "rope/WavLoader.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -158,6 +159,11 @@ public:
 
     [[nodiscard]] unsigned int sampleRate() const noexcept;
     [[nodiscard]] unsigned int outputChannels() const noexcept;
+
+    /// Number of sounds currently holding decoded data in the bank (a memory/
+    /// asset stat). A sound retired via unloadSound() while still feeding a
+    /// voice keeps counting until that voice ends and its buffer is reclaimed.
+    [[nodiscard]] std::size_t soundCount() const noexcept;
 
     // ---- Offline rendering (testing / headless) ----
 

@@ -154,6 +154,7 @@ Done in v0.1:
 - [x] Stable C ABI + Flutter FFI plugin + Flame example (Windows-verified)
 - [x] Headless offline rendering (Null backend) + GoogleTest suite + CI
 - [x] Per-voice resampling (any source rate → device rate) + pitch control
+- [x] Live reclamation of unloaded sounds (memory bounded to live data, refcounted)
 
 Next:
 - [ ] Master limiter / soft-clip on the mix bus
@@ -163,5 +164,4 @@ Next:
 - [ ] Mobile/desktop plugin glue beyond Windows (Android/iOS/macOS/Linux)
 - [ ] Device-changed / auto-reroute events
 - [ ] OGG/FLAC/MP3 decoding
-- [ ] Sound-bank generation handles + live reclamation of unloaded buffers
 ```
