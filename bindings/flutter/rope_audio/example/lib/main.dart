@@ -50,7 +50,7 @@ class _GamePageState extends State<GamePage> {
             right: 16,
             child: ValueListenableBuilder<String>(
               valueListenable: _game.status,
-              builder: (_, value, __) => Text(
+              builder: (_, value, _) => Text(
                 value,
                 style: const TextStyle(fontSize: 14, color: Colors.white70),
               ),

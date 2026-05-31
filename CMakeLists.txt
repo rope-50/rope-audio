@@ -118,6 +118,15 @@ if(ROPE_AUDIO_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
+# ---------------------------------------------------------------------------
+# Tests (GoogleTest + CTest). Run with `ctest --test-dir build/<preset>`.
+# ---------------------------------------------------------------------------
+option(ROPE_AUDIO_BUILD_TESTS "Build the unit test suite" ON)
+if(ROPE_AUDIO_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
+endif()
+
 message(STATUS "rope_audioengine ${PROJECT_VERSION} configured "
                "(examples: ${ROPE_AUDIO_BUILD_EXAMPLES}, "
                "miniaudio: ${ROPE_AUDIO_BACKEND_MINIAUDIO}, "

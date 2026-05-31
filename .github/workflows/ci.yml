@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  cpp:
+    name: C++ tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        # miniaudio-only (tests use the Null backend, so no audio device is
+        # needed); skip RtAudio/ASIO and the device-opening examples.
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DROPE_AUDIO_BACKEND_RTAUDIO=OFF
+          -DROPE_AUDIO_BUILD_EXAMPLES=OFF
+          -DROPE_AUDIO_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  flutter:
+    name: Flutter plugin (analyze + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bindings/flutter/rope_audio
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install deps
+        run: flutter pub get
+
+      - name: Analyze
+        run: dart analyze lib test
+
+      - name: Test
+        run: flutter test
