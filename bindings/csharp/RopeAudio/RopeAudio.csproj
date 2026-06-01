@@ -15,6 +15,11 @@
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Version>0.9.0</Version>
     <Description>C# (P/Invoke) bindings for the rope-audioengine real-time audio engine. Usable from Unity and Godot .NET.</Description>
+    <Authors>Rodrigo Urbina Espinosa</Authors>
+    <Copyright>Copyright (c) 2026 Rodrigo Urbina Espinosa</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/rope-50/rope-audio</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/rope-50/rope-audio.git</RepositoryUrl>
   </PropertyGroup>
 
 </Project>

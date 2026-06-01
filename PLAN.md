@@ -104,8 +104,8 @@ serves pure-GDScript users.
 - [x] CMake `install()` + package config (`find_package(rope)` → `rope::audioengine`)
       and a `FetchContent`-friendly target. Self-contained static lib (decoders
       folded in); a CI job installs rope and links a `find_package` consumer.
-- [ ] Semantic-versioned ABI policy doc (when MAJOR/MINOR bump; the
-      `rope_abi_version()` contract).
+- [x] Semantic-versioned ABI policy doc (when MAJOR/MINOR bump; the
+      `rope_abi_version()` contract) — [docs/ABI_POLICY.md](docs/ABI_POLICY.md).
 - [ ] **Standalone `*-starter` template repos** (post-publish): mirror the key
       `examples/` into independent "Use this template" repos that depend on the
       published package — see item 6.
@@ -120,8 +120,8 @@ serves pure-GDScript users.
       exhaustion, and leak-free reclamation (soundCount()==0). Runs in CI.
 - [ ] **API reference docs** (Doxygen for C/C++, dartdoc, XML docs for C#).
 - [ ] A short **demo video / GIF** of the Flame example for the README and pub.
-- [ ] `LICENSE` confirmed + third-party attributions (dr_wav, miniaudio, RtAudio).
-- [ ] `CONTRIBUTING.md` + issue/PR templates.
+- [x] `LICENSE` (MIT) + third-party attributions (`THIRD_PARTY_NOTICES.md`).
+- [x] `CONTRIBUTING.md` + issue/PR templates.
 
 ---
 

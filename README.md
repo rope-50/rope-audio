@@ -1,6 +1,7 @@
 # rope-audioengine
 
 [![CI](https://github.com/rope-50/rope-audio/actions/workflows/ci.yml/badge.svg)](https://github.com/rope-50/rope-audio/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 A modern C++ (C++20) real-time audio engine for **games**. It opens a single
 output stream and mixes any number of simultaneously-playing mono/stereo WAV
@@ -198,4 +199,16 @@ Done in v0.1:
 Next:
 - [ ] Mobile/desktop plugin glue beyond Windows (Android/iOS/macOS/Linux)
 - [ ] Device-changed / auto-reroute events
-```
+
+See [PLAN.md](PLAN.md) for the full roadmap to 1.0.
+
+## Contributing
+
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). The audio thread
+must stay allocation/lock-free, and the C ABI is **append-only**
+(see [docs/ABI_POLICY.md](docs/ABI_POLICY.md)).
+
+## License
+
+[MIT](LICENSE) © 2026 Rodrigo Urbina Espinosa. Bundled third-party components and
+their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
